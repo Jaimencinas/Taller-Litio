@@ -7,11 +7,9 @@
 <meta name="robots" content="noindex">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='3' y='6' width='26' height='22' rx='4' fill='none' stroke='%231B2028' stroke-width='2.5'/%3E%3Crect x='12' y='2' width='8' height='4' rx='1' fill='%231B2028'/%3E%3Crect x='7' y='16' width='18' height='8' rx='1.5' fill='%23B5562A'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
-<script src="config.js"></script>
-<script src="supabase-layer.js"></script>
+<script src="airtable-layer.js"></script>
 <style>
 html,body{margin:0}
 body{padding:0 0 env(safe-area-inset-bottom,0px)}
@@ -287,7 +285,6 @@ body[data-auth="out"] .top, body[data-auth="out"] main{visibility:hidden}
       <button role="tab" aria-selected="true" data-view="encargos" id="tab-encargos">Encargos</button>
       <button role="tab" aria-selected="false" data-view="presupuestos" id="tab-presupuestos">Presupuestos</button>
       <button role="tab" aria-selected="false" data-view="tarifas" id="tab-tarifas" class="admin-only">Tarifas y almacenes</button>
-      <button role="tab" aria-selected="false" data-view="usuarios" id="tab-usuarios" class="admin-only">Usuarios</button>
     </nav>
     <div class="who" id="who"></div>
     <button class="btn sm" id="btnLogout" hidden>Salir</button>
@@ -510,29 +507,6 @@ body[data-auth="out"] .top, body[data-auth="out"] main{visibility:hidden}
     </div>
   </div>
 </section>
-<!-- ============ USUARIOS (admin) ============ -->
-<section class="view" id="view-usuarios">
-  <div class="cols">
-    <div class="panel">
-      <div class="panel-h"><h2>Usuarios con acceso</h2></div>
-      <div class="tblwrap"><table class="tar" id="tUsuarios"><thead><tr><th>Nombre</th><th>Email</th><th>Rol</th><th>Activo</th><th>Alta</th></tr></thead><tbody></tbody></table></div>
-      <div class="panel-b hint">Un <b>empleado</b> ve Encargos completo y el estado de los presupuestos. Un <b>administrador</b> ve todo, edita tarifas, costes y presupuestos y gestiona usuarios. Desactivar una cuenta le impide entrar sin borrar su historial.</div>
-    </div>
-    <div class="panel">
-      <div class="panel-h"><h2>Invitar a una persona</h2></div>
-      <div class="panel-b">
-        <form id="formInvite" class="grid g2">
-          <label class="f">Nombre<input type="text" id="invNombre" required></label>
-          <label class="f">Email<input type="text" id="invEmail" required inputmode="email"></label>
-          <label class="f">Rol<select id="invRol"><option value="empleado">Empleado</option><option value="admin">Administrador</option></select></label>
-          <div style="align-self:end"><button class="btn primary" type="submit" id="invSubmit">Enviar invitación</button></div>
-        </form>
-        <p class="hint" style="margin:10px 0 0">Recibirá un correo para crear su contraseña. Si el correo no llega, revisa la carpeta de spam o crea el usuario desde Supabase → Authentication → Users → "Invite user".</p>
-        <div id="invMsg" class="hint" style="margin-top:8px"></div>
-      </div>
-    </div>
-  </div>
-</section>
 </main>
 
 <!-- ============ LOGIN ============ -->
@@ -540,19 +514,12 @@ body[data-auth="out"] .top, body[data-auth="out"] main{visibility:hidden}
   <div class="login-card">
     <div class="brand" style="margin-bottom:14px"><h1>Taller Litio</h1><span>Volta Baterías</span></div>
     <form id="formLogin" class="grid" style="gap:12px">
-      <label class="f">Email<input type="text" id="lEmail" required inputmode="email" autocomplete="username"></label>
+      <label class="f">Acceso<select id="lRol"><option value="empleado">Empleado</option><option value="admin">Administrador</option></select></label>
+      <label class="f">Tu nombre (firma las notas)<input type="text" id="lNombre" required maxlength="40" autocomplete="name" placeholder="Ej. David"></label>
       <label class="f">Contraseña<input type="password" id="lPass" required autocomplete="current-password"></label>
       <button class="btn primary" type="submit" id="lSubmit">Entrar</button>
-      <button class="btn sm" type="button" id="lForgot" style="justify-self:start;border:0">¿Has olvidado la contraseña?</button>
       <div class="hint" id="lMsg"></div>
     </form>
-    <form id="formNewPass" class="grid" style="gap:12px" hidden>
-      <div class="eyebrow">Elige tu nueva contraseña</div>
-      <label class="f">Nueva contraseña (mínimo 8 caracteres)<input type="password" id="nPass" required minlength="8" autocomplete="new-password"></label>
-      <button class="btn primary" type="submit">Guardar y entrar</button>
-      <div class="hint" id="nMsg"></div>
-    </form>
-    <div class="hint" id="lConfig" hidden>Falta configurar <code>config.js</code> con la URL y la clave pública (anon key) de Supabase.</div>
   </div>
 </div>
 
@@ -609,10 +576,9 @@ function showView(v){
   document.querySelectorAll(".view").forEach(s => s.classList.toggle("active", s.id==="view-"+v));
   try{ localStorage.setItem("litio.tab", v); }catch{}
   if(v==="tarifas") renderTarifas();
-  if(v==="usuarios" && isAdmin) renderUsuarios();
 }
-try{ const t=localStorage.getItem("litio.tab"); if(t && ["encargos","presupuestos","tarifas","usuarios"].includes(t)) showView(t); }catch{}
-if(/^#(encargos|presupuestos|tarifas|usuarios)$/.test(location.hash)) showView(location.hash.slice(1));
+try{ const t=localStorage.getItem("litio.tab"); if(t && ["encargos","presupuestos","tarifas"].includes(t)) showView(t); }catch{}
+if(/^#(encargos|presupuestos|tarifas)$/.test(location.hash)) showView(location.hash.slice(1));
 
 // ---------- Selects ----------
 function fillSelect(sel, items, {value=null, blank=null, cls=false}={}){
@@ -1232,7 +1198,7 @@ function renderAll(){
 function setRole(admin){
   document.body.dataset.role = admin ? "direccion" : "empleado";
   if(!admin){
-    if($("view-tarifas").classList.contains("active") || $("view-usuarios").classList.contains("active")) showView("encargos");
+    if($("view-tarifas").classList.contains("active")) showView("encargos");
     // Empleados: presupuestos solo lectura (estado, total, PDF para el cliente)
     ["qEncargo","qCliente","qNif","qDir","qEmail","qBateria","qCelda","qNCeldas","qBms","qHoras","qDiag","qDto","qExtras","qNotas","qTrabajos","qModo","qDescCliente","qCeldaNombre","qCeldaPrecio","qNBms","qBmsNombre","qBmsPrecio"].forEach(id=>$(id).disabled=true);
     ["qGuardar","qEnviado","qAprobar","qRechazar","hFacturado","hCsv","hJson"].forEach(id=>$(id).hidden=true);
@@ -1262,72 +1228,37 @@ function subscribeAll(){
   db.doc("config/tarifas").onSnapshot(s => { if(ex(s)){ const d=s.data(); tarifas = {celdas:d.celdas||[], bms:d.bms||[], hora:d.hora??DEF_TARIFAS.hora, diagnosis:d.diagnosis??DEF_TARIFAS.diagnosis, iva:d.iva??DEF_TARIFAS.iva, margen:d.margen??DEF_TARIFAS.margen, margenCustom:d.margenCustom??DEF_TARIFAS.margenCustom, consumibles:d.consumibles??DEF_TARIFAS.consumibles}; } renderAll(); if($("view-tarifas").classList.contains("active")) renderTarifas(); }, e=>console.warn(e));
   if(isAdmin) db.doc("config/costes").onSnapshot(s => { costes = ex(s) ? {celdas:s.data().celdas||{}, bms:s.data().bms||{}, hora:s.data().hora||0} : {celdas:{},bms:{},hora:0}; renderCalc(); if($("view-tarifas").classList.contains("active")) renderTarifas(); }, e=>console.warn(e)); else costes = {celdas:{},bms:{},hora:0};
   db.doc("config/general").onSnapshot(s => { if(ex(s)){ const d=s.data(); config = {almacenes:d.almacenes?.length?d.almacenes:DEF_CONFIG.almacenes, estados:d.estados?.length?d.estados:DEF_CONFIG.estados, empresa:{...DEF_EMPRESA, ...(d.empresa||{})}}; } renderAll(); }, e=>console.warn(e));
-  db.collection("encargos").onSnapshot(s => { encargos = s.docs.map(d=>({id:d.id, ...d.data()})); renderAll(); if(selId && !encargos.some(e=>e.id===selId)){ selId=null; $("detalleBody").hidden=true; $("detalleEmpty").hidden=false; } }, e=>console.warn(e));
+  db.collection("encargos").onSnapshot(s => { encargos = s.docs.map(d=>({id:d.id, ...d.data()})); renderAll(); if(selId){ if(!encargos.some(e=>e.id===selId)){ selId=null; $("detalleBody").hidden=true; $("detalleEmpty").hidden=false; } else { const e=encargos.find(x=>x.id===selId); const fotos=(e.fotos||[]); $("dFotos").innerHTML = fotos.map(id => `<a class="foto" href="${esc(TL.blobUrl(id))}" target="_blank" rel="noopener"><img src="${esc(TL.blobUrl(id))}" alt="Foto de la batería"></a>`).join(""); $("dFotos").hidden=!fotos.length; } } }, e=>console.warn(e));
   db.collection("presupuestos").onSnapshot(s => { presupuestos = s.docs.map(d=>({id:d.id, ...d.data()})); renderAll(); if(curPresId){ renderHolded(); } }, e=>console.warn(e));
 }
-async function enterApp(perfil){
+async function enterApp(sess){
   db = TL.db; assets = TL.assets; user = TL.user; downloads = TL.downloads;
   const m = await user.me(); me = {id:m.id, name:m.name, avatarUrl:m.avatarUrl, canEdit:m.canEdit}; isAdmin = !!m.canEdit;
-  $("who").innerHTML = `<img src="${esc(m.avatarUrl)}" alt=""><span>${esc(m.name||"tú")}</span><span class="role-pill">${isAdmin?"Dirección":"Empleado"}</span>`;
+  $("who").innerHTML = `<img src="${esc(m.avatarUrl)}" alt=""><span>${esc(m.name||"tú")}</span><span class="role-pill">${isAdmin?"Administrador":"Empleado"}</span>`;
   $("btnLogout").hidden = false;
-  if(!perfil.activo){ setReadOnly(true); $("statusLine").textContent = "Tu cuenta está desactivada. Habla con el administrador."; }
   setRole(isAdmin);
   document.body.dataset.auth = "in"; $("login").hidden = true;
   subscribeAll();
-  if(isAdmin) renderUsuarios();
 }
 function showLogin(msg){
   document.body.dataset.auth = "out"; $("login").hidden = false; $("btnLogout").hidden = true;
+  try{ const n = localStorage.getItem("tl.nombre"); if(n) $("lNombre").value = n; }catch{}
   if(msg) $("lMsg").textContent = msg;
 }
-$("btnLogout").addEventListener("click", async () => { await TL.auth.signOut(); location.reload(); });
+$("btnLogout").addEventListener("click", () => TL.auth.signOut());
 $("formLogin").addEventListener("submit", async ev => {
   ev.preventDefault(); $("lSubmit").disabled = true; $("lMsg").textContent = "";
-  try{ const perfil = await TL.auth.signIn($("lEmail").value.trim(), $("lPass").value); await enterApp(perfil); }
-  catch(err){ $("lMsg").textContent = /invalid/i.test(err.message) ? "Email o contraseña incorrectos." : /confirm/i.test(err.message) ? "Debes confirmar tu email antes de entrar (revisa tu correo)." : ("No se pudo entrar: "+err.message); }
-  $("lSubmit").disabled = false;
-});
-$("lForgot").addEventListener("click", async () => {
-  const email = $("lEmail").value.trim(); if(!email){ $("lMsg").textContent = "Escribe tu email y vuelve a pulsar."; return; }
-  try{ await TL.auth.resetPassword(email); $("lMsg").textContent = "Te hemos enviado un correo con el enlace para cambiar la contraseña."; }catch(err){ $("lMsg").textContent = "No se pudo enviar: "+err.message; }
-});
-$("formNewPass").addEventListener("submit", async ev => {
-  ev.preventDefault();
-  try{ await TL.auth.updatePassword($("nPass").value); $("nMsg").textContent = "Contraseña guardada."; const p = await TL.loadPerfil(); history.replaceState(null,"",location.pathname); await enterApp(p); }
-  catch(err){ $("nMsg").textContent = "No se pudo guardar: "+err.message; }
-});
-// ---------- Usuarios (admin) ----------
-async function renderUsuarios(){
   try{
-    const rows = await TL.admin.listUsers();
-    $("tUsuarios").querySelector("tbody").innerHTML = rows.map(u => `<tr data-id="${esc(u.id)}">
-      <td><input type="text" data-k="nombre" value="${esc(u.nombre||"")}"></td>
-      <td class="muted" style="font-size:12px">${esc(u.email||"")}</td>
-      <td><select data-k="rol" ${u.id===me.id?"disabled":""}><option value="empleado" ${u.rol==="empleado"?"selected":""}>Empleado</option><option value="admin" ${u.rol==="admin"?"selected":""}>Administrador</option></select></td>
-      <td style="text-align:center"><input type="checkbox" data-k="activo" ${u.activo?"checked":""} ${u.id===me.id?"disabled":""}></td>
-      <td class="muted" style="font-size:12px;white-space:nowrap">${new Date(u.created_at).toLocaleDateString("es-ES")}</td></tr>`).join("") || `<tr><td colspan="5" class="muted">Sin usuarios.</td></tr>`;
-    $("tUsuarios").querySelectorAll("tr[data-id]").forEach(tr => {
-      const id = tr.dataset.id;
-      tr.querySelector("[data-k=rol]").addEventListener("change", async ev => { try{ await TL.admin.setRol(id, ev.target.value); toast("Rol actualizado"); }catch(err){ toast("No se pudo cambiar: "+err.message); } });
-      tr.querySelector("[data-k=activo]").addEventListener("change", async ev => { try{ await TL.admin.setActivo(id, ev.target.checked); toast(ev.target.checked?"Cuenta activada":"Cuenta desactivada"); }catch(err){ toast("No se pudo cambiar: "+err.message); } });
-      tr.querySelector("[data-k=nombre]").addEventListener("change", async ev => { try{ await TL.admin.setNombre(id, ev.target.value.trim()); toast("Nombre guardado"); }catch(err){ toast("No se pudo guardar: "+err.message); } });
-    });
-  }catch(err){ $("tUsuarios").querySelector("tbody").innerHTML = `<tr><td colspan="5" class="muted">No se pudo cargar: ${esc(err.message)}</td></tr>`; }
-}
-$("formInvite").addEventListener("submit", async ev => {
-  ev.preventDefault(); $("invSubmit").disabled = true; $("invMsg").textContent = "Enviando…";
-  try{ await TL.admin.invite($("invEmail").value.trim(), $("invNombre").value.trim(), $("invRol").value); $("invMsg").textContent = `Invitación enviada a ${$("invEmail").value.trim()}.`; $("formInvite").reset(); renderUsuarios(); }
-  catch(err){ $("invMsg").textContent = err.code==="not_configured" ? "La función de invitación no está configurada en Netlify (falta SUPABASE_SERVICE_ROLE_KEY). Puedes invitar desde Supabase → Authentication → Users." : ("No se pudo invitar: "+err.message); }
-  $("invSubmit").disabled = false;
+    const nombre = $("lNombre").value.trim(); try{ localStorage.setItem("tl.nombre", nombre); }catch{}
+    await TL.auth.signIn($("lRol").value, $("lPass").value, nombre);
+    await TL.auth.start(); await enterApp(TL.auth.session());
+  }catch(err){ $("lMsg").textContent = err.code==="not_configured" ? err.message : (err.message||"No se pudo entrar"); }
+  $("lSubmit").disabled = false;
 });
 async function boot(){
   refreshSelects(); renderCalc();
-  if(!window.TL || !TL.configured){ document.body.dataset.auth="out"; $("login").hidden=false; $("formLogin").hidden=true; $("lConfig").hidden=false; return; }
-  // Enlace de recuperación de contraseña
-  if(/type=recovery/.test(location.hash)){ $("formLogin").hidden = true; $("formNewPass").hidden = false; document.body.dataset.auth="out"; $("login").hidden=false; return; }
-  const s = await TL.auth.session();
-  if(s){ const perfil = await TL.loadPerfil(); await enterApp(perfil); } else showLogin();
-  TL.auth.onChange((ev) => { if(ev==="SIGNED_OUT") showLogin(); if(ev==="PASSWORD_RECOVERY"){ $("formLogin").hidden = true; $("formNewPass").hidden = false; document.body.dataset.auth="out"; $("login").hidden=false; } });
+  const sess = await TL.auth.start().catch(()=>null);
+  if(sess) await enterApp(sess); else showLogin();
 }
 boot();
 })();

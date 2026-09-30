@@ -2,8 +2,6 @@
   "name": "taller-litio",
   "private": true,
   "version": "1.0.0",
-  "description": "Panel de encargos y presupuestos de reparación de baterías de litio — Volta Baterías",
-  "dependencies": {
-    "@supabase/supabase-js": "^2.45.4"
-  }
+  "description": "Panel de encargos y presupuestos de reparaci\u00f3n de bater\u00edas de litio \u2014 Volta Bater\u00edas",
+  "dependencies": {}
 }

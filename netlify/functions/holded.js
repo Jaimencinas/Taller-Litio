@@ -1,12 +1,13 @@
 // POST /.netlify/functions/holded  { contact:{name,code,address,email,phone}, items:[{sku,name,units,subtotal,tax,discount}], notes, numSerie, date }
 // Crea una FACTURA en Holded a partir del presupuesto aceptado. Requiere HOLDED_API_KEY en Netlify.
 // Referencia: https://developers.holded.com  (Invoicing → Documents → Create document)
-const { json, requireAdmin } = require("./_auth");
+const { json, sessionFrom } = require("./_lib");
 
 exports.handler = async (event) => {
   if (event.httpMethod !== "POST") return json(405, { error: "Método no permitido" });
-  const gate = await requireAdmin(event);
-  if (gate.error) return gate.error;
+  const sess = sessionFrom(event);
+  if (!sess) return json(401, { error: "Sesión no válida" });
+  if (sess.rol !== "admin") return json(403, { error: "Solo administrador" });
 
   const key = process.env.HOLDED_API_KEY;
   if (!key) return json(501, { error: "HOLDED_API_KEY no configurada", code: "not_configured" });
