@@ -112,10 +112,35 @@ async function writeNotas(encargoId, doc, files) {
   const fresh = await listAll(T.notas, { filterByFormula: `{Encargo}='${encargoId}'` });
   return { doc: { encargoId, items: fresh.map((r) => notaToItem(r, adj)) }, adjuntos: adj };
 }
-async function writePres(id, doc) {
+async function loadCostes() {
+  const r = await findByField(T.config, "Clave", "costes");
+  return r ? parseJSON(r.fields["JSON"], {}) : {};
+}
+// Coste real del presupuesto a partir de las tarifas internas (+ ajustes internos del admin)
+function calcAnalitica(doc, costes, interno) {
+  interno = interno || {};
+  const cCelda = interno.costeCelda != null ? +interno.costeCelda : (+(costes.celdas || {})[doc.celdaId] || 0);
+  const cBms = interno.costeBms != null ? +interno.costeBms : (+(costes.bms || {})[doc.bmsId] || 0);
+  const cHora = +costes.hora || 0;
+  const nCeldas = +doc.nCeldas || 0, nBms = doc.nBms == null ? 1 : +doc.nBms, horas = +doc.horas || 0;
+  const bmsPrecio = doc.bmsId === "custom" ? +doc.bmsPrecio : null;
+  const desglose = [];
+  if (nCeldas > 0 && doc.celdaId) desglose.push({ c: "Celdas", n: nCeldas, coste: cCelda, total: nCeldas * cCelda });
+  if (nBms > 0 && doc.bmsId && doc.bmsId !== "b0" && (bmsPrecio == null || bmsPrecio > 0)) desglose.push({ c: "BMS", n: nBms, coste: cBms, total: nBms * cBms });
+  if (horas > 0) desglose.push({ c: "Horas", n: horas, coste: cHora, total: horas * cHora });
+  const coste = desglose.reduce((a, d) => a + d.total, 0);
+  const baseNeta = (+doc.base || 0) - (+doc.dtoImp || 0);
+  const beneficio = baseNeta - coste;
+  return { coste, beneficio, margen: baseNeta > 0 ? beneficio / baseNeta * 100 : 0, baseNeta, desglose, interno };
+}
+async function writePres(id, doc, admin) {
   const rec = await findByField(T.pres, "ID", id);
-  const r = rec ? await updateRec(T.pres, rec.id, presFields({ ...doc, id })) : await createRec(T.pres, presFields({ ...doc, id }));
-  return { doc: presToDoc(r, true) };
+  const prevInterno = rec ? (parseJSON(rec.fields["Interno"], {}).interno || {}) : {};
+  const costes = await loadCostes();
+  const an = calcAnalitica({ ...doc, id }, costes, prevInterno);
+  const fields = { ...presFields({ ...doc, id }), ...analFields(an) };
+  const r = rec ? await updateRec(T.pres, rec.id, fields) : await createRec(T.pres, fields);
+  return { doc: presToDoc(r, admin), analitica: admin ? analToDoc(r) : undefined };
 }
 async function writeConfig(key, data) {
   const rec = await findByField(T.config, "Clave", key);
@@ -124,9 +149,12 @@ async function writeConfig(key, data) {
   return { doc: parseJSON(r.fields["JSON"], {}) };
 }
 async function writeAnalitica(presId, data) {
+  // El admin guarda sus ajustes internos (costes personalizados); el coste se recalcula con ellos.
   const rec = await findByField(T.pres, "ID", presId);
   if (!rec) return { doc: null };
-  const r = await updateRec(T.pres, rec.id, analFields(data));
+  const costes = await loadCostes();
+  const an = calcAnalitica(presToDoc(rec, true), costes, data.interno || {});
+  const r = await updateRec(T.pres, rec.id, analFields(an));
   return { doc: analToDoc(r) };
 }
 async function readDoc(rt, admin) {
@@ -184,7 +212,7 @@ exports.handler = async (event) => {
     let b = {}; try { b = JSON.parse(event.body || "{}"); } catch { return json(400, { error: "JSON inválido" }); }
     if (b.op === "setup") { if (!admin) return json(403, { error: "Solo administrador" }); return json(200, await setup()); }
     const rt = route(b.path); if (!rt) return json(400, { error: "Ruta no válida: " + b.path });
-    const needsAdmin = rt.kind === "pres" || rt.kind === "config" || rt.kind === "analitica";
+    const needsAdmin = rt.kind === "config" || rt.kind === "analitica";
     if (needsAdmin && !admin) return json(403, { error: "Solo el administrador puede modificar esto", code: "forbidden" });
     const files = b.files || {};
     if (b.op === "delete") {
@@ -205,7 +233,7 @@ exports.handler = async (event) => {
     let res;
     if (rt.kind === "encargo") res = await writeEncargo(id, data, files, sess);
     else if (rt.kind === "notas") res = await writeNotas(id, data, files);
-    else if (rt.kind === "pres") res = await writePres(id, data);
+    else if (rt.kind === "pres") res = await writePres(id, data, admin);
     else if (rt.kind === "config") res = await writeConfig(id, data);
     else if (rt.kind === "analitica") res = await writeAnalitica(id, data);
     return json(200, { id, ...res });

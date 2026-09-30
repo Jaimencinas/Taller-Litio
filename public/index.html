@@ -322,7 +322,7 @@ body[data-auth="out"] .top, body[data-auth="out"] main{visibility:hidden}
             </div>
             <div style="display:flex;gap:6px;flex-wrap:wrap">
               <button class="btn sm" id="btnEditar">Editar</button>
-              <button class="btn sm admin-only" id="btnPresupuestar">Presupuestar</button>
+              <button class="btn sm" id="btnPresupuestar">Presupuestar</button>
               <span id="delWrap"></span>
             </div>
           </div>
@@ -380,7 +380,7 @@ body[data-auth="out"] .top, body[data-auth="out"] main{visibility:hidden}
 <section class="view" id="view-presupuestos">
   <div class="cols">
     <div class="panel">
-      <div class="panel-h"><h2>Presupuestos</h2><div class="toolbar admin-only"><button class="btn primary" id="btnNuevoPres">+ Nuevo presupuesto</button></div></div>
+      <div class="panel-h"><h2>Presupuestos</h2><div class="toolbar"><button class="btn primary" id="btnNuevoPres">+ Nuevo presupuesto</button></div></div>
       <div class="filters"><select id="pfEstado"><option value="">Todos</option><option value="borrador">Borrador</option><option value="enviado">Enviado</option><option value="aprobado">Aprobado</option><option value="facturado">Facturado</option><option value="rechazado">Rechazado</option></select></div>
       <div class="list" id="listaPres"></div>
     </div>
@@ -896,7 +896,6 @@ function nextNumPres(){
 }
 function setPresEstado(estado){ const ch=$("qEstadoChip"); ch.textContent=estado; ch.className="chip "+estado; $("holdedBox").hidden = !(estado==="aprobado"||estado==="facturado"); }
 function newPres(){
-  if(!isAdmin && !demoMode()) return;
   curPresId = null; $("qTitle").textContent = "Nuevo presupuesto";
   $("qEncargo").value = selId||""; $("qEncargo").dispatchEvent(new Event("change"));
   if(!selId){ $("qCliente").value=""; $("qBateria").value=""; }
@@ -932,7 +931,7 @@ async function savePres(estado){
       if(demoMode()){ curPresId="p"+Math.random().toString(36).slice(2,8); presupuestos.push({id:curPresId,...p}); }
       else { const ref = await db.collection("presupuestos").add(p); curPresId = ref.id; presupuestos.push({id:curPresId,...p}); }
     }
-    if(isAdmin && !demoMode()){ try{ await db.doc("config/costes/analitica/"+curPresId).set({presId:curPresId, num:p.num||presupuestos.find(x=>x.id===curPresId)?.num||"", estado:p.estado, baseNeta:r.baseNeta, ...r.analitica, interno:INT(), updatedAt:Date.now()}); }catch(err){ console.warn("analitica", err); } }
+    if(isAdmin && !demoMode()){ const it = INT(); if(it.costeCelda!=null || it.costeBms!=null){ try{ await db.doc("config/costes/analitica/"+curPresId).set({interno:it}); }catch(err){ console.warn("analitica", err); } } }
     $("qTitle").textContent = presupuestos.find(x=>x.id===curPresId)?.num || $("qTitle").textContent;
     setPresEstado(p.estado); renderListaPres(); renderHolded();
     if(p.encargoId && estado){
@@ -1131,7 +1130,7 @@ async function crearFacturaHolded(){
     const r = await TL.admin.holdedFactura(d);
     if(r && r.docNumber){ $("hNumFactura").value = r.docNumber; toast(`Factura creada en Holded: ${r.docNumber}`); await savePres("facturado"); return; }
   }catch(err){
-    if(err.code!=="not_configured") toast("Holded: "+err.message+" · se descarga el CSV");
+    if(err.code!=="not_configured" && !/administrador/i.test(err.message)) toast("Holded: "+err.message+" · se descarga el CSV");
   }
   await descargarHoldedCsv(true);
 }
@@ -1197,15 +1196,8 @@ function renderAll(){
 // ---------- Boot ----------
 function setRole(admin){
   document.body.dataset.role = admin ? "direccion" : "empleado";
-  if(!admin){
-    if($("view-tarifas").classList.contains("active")) showView("encargos");
-    // Empleados: presupuestos solo lectura (estado, total, PDF para el cliente)
-    ["qEncargo","qCliente","qNif","qDir","qEmail","qBateria","qCelda","qNCeldas","qBms","qHoras","qDiag","qDto","qExtras","qNotas","qTrabajos","qModo","qDescCliente","qCeldaNombre","qCeldaPrecio","qNBms","qBmsNombre","qBmsPrecio"].forEach(id=>$(id).disabled=true);
-    ["qGuardar","qEnviado","qAprobar","qRechazar","hFacturado","hCsv","hJson"].forEach(id=>$(id).hidden=true);
-    $("hNumFactura").disabled = true; $("qDelWrap").hidden = true;
-    $("qTitle").textContent = "Presupuesto";
-    $("tarifasPendientes").hidden = true;
-  }
+  if(!admin && $("view-tarifas").classList.contains("active")) showView("encargos");
+  // Empleados: presupuestan igual que dirección, pero sin costes ni beneficio (bloques .admin-only y profitBox)
 }
 function setReadOnly(ro){
   readOnly = ro;

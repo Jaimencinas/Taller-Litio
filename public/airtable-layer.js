@@ -84,6 +84,7 @@
     const r = await call("POST", body);
     Object.keys(files).forEach((k) => pendingFiles.delete(k));
     if (r.adjuntos) Object.assign(state.adjuntos, r.adjuntos);
+    if (r.analitica) state.analitica[r.id || rt.id] = r.analitica;
     applyLocal({ ...rt, id: r.id || rt.id }, r.doc);
     return r;
   }

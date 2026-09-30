@@ -5,9 +5,9 @@ Página estática (`public/`) + funciones de Netlify (`netlify/functions/`) + **
 
 ## Cómo funciona
 - **Dos accesos fijos**: *Empleado* y *Administrador*, cada uno con su contraseña. Al entrar, cada persona escribe su nombre para firmar sus notas.
-- **Empleado**: pestaña Encargos completa (crear, anotar, fotos, audios, estado y almacén) y la lista de presupuestos con estado, total y PDF.
-- **Administrador**: todo lo anterior más la calculadora de presupuestos, coste y beneficio, tarifas y datos de empresa.
-- La clave de Airtable vive solo en Netlify; el navegador nunca la ve. La función `api` aplica los permisos por rol (un empleado no puede leer costes ni escribir presupuestos).
+- **Empleado**: Encargos completo (crear, anotar, fotos, audios, estado y almacén) y Presupuestos completo (crear, modificar, enviar, aprobar, PDF), pero sin ver costes ni beneficio.
+- **Administrador**: todo lo anterior más coste y beneficio de cada presupuesto (calculados en el servidor con las tarifas internas), tarifas y datos de empresa.
+- La clave de Airtable vive solo en Netlify; el navegador nunca la ve. La función `api` aplica los permisos por rol (un empleado nunca recibe costes ni beneficios).
 - Datos en Airtable, base **Taller Litio** (`app5zyLy77zW0ymtp`): tablas `Encargos`, `Notas`, `Presupuestos` y `Config`. Fotos y audios van como adjuntos de Airtable.
 
 ## Puesta en marcha en Netlify (una sola vez)
