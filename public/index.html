@@ -428,9 +428,10 @@ body[data-auth="out"] .top, body[data-auth="out"] main{visibility:hidden}
           <label class="f">Horas de trabajo<input type="number" id="qHoras" min="0" step="0.25" value="0"></label>
           <label class="f">Diagnosis<select id="qDiag"><option value="1">Sí, con diagnosis</option><option value="0">No</option></select></label>
           <label class="f">Descuento (%)<input type="number" id="qDto" min="0" max="100" step="1" value="0"></label>
+          <label class="f">Precio cerrado sin IVA (€) <span class="muted">opcional: sustituye la suma</span><input type="number" id="qPrecioCerrado" min="0" step="0.01" placeholder="Dejar vacío para sumar conceptos"></label>
           <label class="f span2">Otros conceptos (uno por línea: concepto ; importe)<textarea id="qExtras" placeholder="Soldadura de níquel ; 12&#10;Envoltura y aislante ; 8"></textarea></label>
           <label class="f">Presentación al cliente<select id="qModo"><option value="linea">Una sola línea (recomendado)</option><option value="conceptos">Por conceptos, sin modelos de celda</option></select></label>
-          <label class="f">Texto de la línea para el cliente<input type="text" id="qDescCliente" placeholder="Se genera solo: Reacondicionamiento de batería …"></label>
+          <label class="f span2">Texto de la línea para el cliente <span class="muted">(se rellena solo; puedes borrarlo y escribir el tuyo)</span><input type="text" id="qDescCliente" placeholder="Reacondicionamiento de batería …"></label>
           <label class="f span2">Trabajos realizados en la batería (sale en el presupuesto como "Trabajos realizados")<textarea id="qTrabajos" placeholder="Ej. Diagnosis completa del pack; sustitución de 10 celdas en los grupos 3 y 4; comprobación del BMS y balanceo; prueba de carga y descarga; sellado y termorretráctil nuevo."></textarea></label>
           <label class="f span2">Observaciones para el cliente (garantía, plazos, condiciones especiales)<textarea id="qNotas"></textarea></label>
         </div>
@@ -492,7 +493,8 @@ body[data-auth="out"] .top, body[data-auth="out"] main{visibility:hidden}
         <div class="panel-b grid g4">
           <label class="f">€/hora de trabajo (PVP)<input type="number" id="tHora" step="0.5"></label>
           <label class="f">Coste interno €/hora<input type="number" id="tHoraCoste" step="0.5"></label>
-          <label class="f">Diagnosis (€)<input type="number" id="tDiag" step="0.5"></label>
+          <label class="f">Diagnosis PVP (€)<input type="number" id="tDiag" step="0.5"></label>
+          <label class="f admin-only">Coste interno diagnosis (€)<input type="number" id="tDiagCoste" step="0.5" min="0"></label>
           <label class="f">Consumibles varios (€, en cada presupuesto)<input type="number" id="tConsumibles" step="0.5" min="0"></label>
           <label class="f">IVA (%)<input type="number" id="tIva" step="1"></label>
         </div>
@@ -859,12 +861,15 @@ const Q = () => ({
   celdaId:$("qCelda").value||null, celdaNombre:$("qCeldaNombre").value.trim(), celdaPrecio:+$("qCeldaPrecio").value||0, nCeldas:+$("qNCeldas").value||0, bmsId:$("qBms").value||null, nBms:+$("qNBms").value||0, bmsNombre:$("qBmsNombre").value.trim(), bmsPrecio:+$("qBmsPrecio").value||0, horas:+$("qHoras").value||0,
   diagnosis: $("qDiag").value==="1", dto:+$("qDto").value||0, extras:$("qExtras").value, notas:$("qNotas").value.trim(), trabajos:$("qTrabajos").value.trim(),
   modo:$("qModo").value, descCliente:$("qDescCliente").value.trim(),
+  precioCerrado: $("qPrecioCerrado").value==="" ? null : (+$("qPrecioCerrado").value||0),
 });
 const INT = () => ({ costeCelda: $("qCelda").value==="custom" && $("qCosteCelda").value!=="" ? +$("qCosteCelda").value : null, costeBms: $("qBms").value==="custom" && $("qCosteBms").value!=="" ? +$("qCosteBms").value : null });
 const GRADO = {A:"Grado A (nuevas)", B:"Grado B", R:"Recuperadas"};
+let descTocado = false; // true cuando el usuario ha escrito su propio texto de línea
+$("qDescCliente").addEventListener("input", () => { descTocado = $("qDescCliente").value.trim()!==""; });
 function calcLineas(q, it){
   it = it || {}; const L = [];
-  if(q.diagnosis) L.push({c:"Diagnosis de la batería (test de celdas, BMS y carga)", n:1, p:+tarifas.diagnosis||0, kind:"diagnosis"});
+  if(q.diagnosis) L.push({c:"Diagnosis de la batería (test de celdas, BMS y carga)", n:1, p:+tarifas.diagnosis||0, kind:"diagnosis", coste:+costes.diagnosis||0});
   const cel = q.celdaId==="custom" ? {id:"custom", marca:"", modelo:q.celdaNombre||"celda personalizada", formato:"", mah:null, precio:q.celdaPrecio||0} : tarifas.celdas.find(c=>c.id===q.celdaId);
   if(cel && q.nCeldas>0) L.push({c:`Sustitución de celdas · ${[cel.marca,cel.modelo].filter(Boolean).join(" ")}${cel.formato?` ${cel.formato}`:""}${cel.mah?` ${cel.mah}mAh`:""}`, n:q.nCeldas, p:+cel.precio||0, coste: it.costeCelda!=null ? +it.costeCelda : (+(costes.celdas?.[cel.id])||0), kind:"celdas"});
   const bms = q.bmsId==="custom" ? {id:"custom", modelo:q.bmsNombre||"BMS personalizado", serie:"", precio:q.bmsPrecio||0} : tarifas.bms.find(b=>b.id===q.bmsId);
@@ -873,14 +878,16 @@ function calcLineas(q, it){
   if(q.horas>0) L.push({c:"Mano de obra", n:q.horas, p:+tarifas.hora||0, unit:"h", coste: it.costeHora!=null ? +it.costeHora : (+costes.hora||0), kind:"horas"});
   if((+tarifas.consumibles||0)>0) L.push({c:"Consumibles varios (cables, termorretráctil, níquel, aislantes)", n:1, p:+tarifas.consumibles, kind:"consumibles"});
   String(q.extras||"").split("\n").map(s=>s.trim()).filter(Boolean).forEach(s => { const [c,imp] = s.split(";"); const p = parseFloat(String(imp||"").replace(",",".")); if(c && !isNaN(p)) L.push({c:c.trim(), n:1, p}); });
-  const base = L.reduce((a,l)=>a+l.n*l.p,0);
+  const suma = L.reduce((a,l)=>a+l.n*l.p,0);
+  const cerrado = q.precioCerrado!=null && q.precioCerrado>0;
+  const base = cerrado ? q.precioCerrado : suma;
   const dtoImp = base*(q.dto/100);
   const baseNeta = base-dtoImp;
   const iva = baseNeta*((+tarifas.iva||0)/100);
   const costeTotal = L.reduce((a,l)=>a+l.n*(l.coste||0),0);
   const beneficio = baseNeta - costeTotal;
   const margen = baseNeta>0 ? beneficio/baseNeta*100 : 0;
-  return {lineas:L.map(l=>{ const {coste, ...pub} = l; return {...pub, importe:l.n*l.p}; }), base, dtoImp, baseNeta, iva, total:baseNeta+iva,
+  return {lineas:L.map(l=>{ const {coste, ...pub} = l; return {...pub, importe:l.n*l.p}; }), base, suma, cerrado, dtoImp, baseNeta, iva, total:baseNeta+iva,
     analitica:{ coste:costeTotal, beneficio, margen, desglose:L.filter(l=>l.coste).map(l=>({c:l.c, n:l.n, coste:l.coste, total:l.n*l.coste})) }};
 }
 function renderCalc(){
@@ -890,10 +897,10 @@ function renderCalc(){
   if($("qBms").value==="custom" && $("qCosteBms").value!=="") $("qBmsPrecio").value = pvpC($("qCosteBms").value);
   const isCustom = q.celdaId==="custom"; $("qCeldaCustomWrap").hidden = !isCustom; $("qCosteCeldaWrap").hidden = !isCustom;
   const isCustomB = q.bmsId==="custom"; $("qBmsCustomWrap").hidden = !isCustomB; $("qCosteBmsWrap").hidden = !isCustomB;
-  if(!$("qDescCliente").value.trim()) $("qDescCliente").placeholder = descAuto(q);
+  if(!descTocado && document.activeElement!==$("qDescCliente")) $("qDescCliente").value = descAuto(q);
   $("qBody").innerHTML = r.lineas.length ? r.lineas.map(l=>`<tr><td>${esc(l.c)}</td><td class="r num">${l.n}${l.unit||""}</td><td class="r num">${eur(l.p)}</td><td class="r num">${eur(l.importe)}</td></tr>`).join("") : `<tr><td colspan="4" class="muted">Añade celdas, BMS, horas o diagnosis para calcular.</td></tr>`;
   $("qFoot").innerHTML = `
-    <tr><td colspan="3" class="r muted">Base imponible</td><td class="r num">${eur(r.base)}</td></tr>
+    ${r.cerrado?`<tr><td colspan="3" class="r muted">Suma de conceptos (orientativa)</td><td class="r num muted" style="text-decoration:line-through">${eur(r.suma)}</td></tr><tr><td colspan="3" class="r" style="font-weight:600">Precio cerrado (base imponible)</td><td class="r num" style="font-weight:600">${eur(r.base)}</td></tr>`:`<tr><td colspan="3" class="r muted">Base imponible</td><td class="r num">${eur(r.base)}</td></tr>`}
     ${q.dto?`<tr><td colspan="3" class="r muted">Descuento ${q.dto}%</td><td class="r num">−${eur(r.dtoImp)}</td></tr>`:""}
     <tr><td colspan="3" class="r muted">IVA ${tarifas.iva}%</td><td class="r num">${eur(r.iva)}</td></tr>
     <tr class="total"><td colspan="3" class="r">Total</td><td class="r num">${eur(r.total)}</td></tr>`;
@@ -901,14 +908,14 @@ function renderCalc(){
   if(isAdmin && r.lineas.length){
     const a = r.analitica; const cls = a.beneficio<0?"neg":a.beneficio>0?"pos":"";
     pb.hidden = false;
-    pb.innerHTML = `<div><div class="k">Coste real</div><div class="v num">${eur(a.coste)}</div><div class="d">${a.desglose.map(d=>`${d.n}× ${eur(d.coste)} ${/celdas/i.test(d.c)?"celda":/BMS/.test(d.c)?"BMS":"h"}`).join(" · ")||"sin coste imputado"}</div></div>
+    pb.innerHTML = `<div><div class="k">Coste real</div><div class="v num">${eur(a.coste)}</div><div class="d">${a.desglose.map(d=>`${d.n}× ${eur(d.coste)} ${/celdas/i.test(d.c)?"celda":/BMS/.test(d.c)?"BMS":/Diagnosis/i.test(d.c)?"diagnosis":"h"}`).join(" · ")||"sin coste imputado"}</div></div>
       <div><div class="k">Base neta</div><div class="v num">${eur(r.baseNeta)}</div><div class="d">sin IVA${q.dto?`, tras ${q.dto}% dto`:""}</div></div>
       <div><div class="k">Beneficio</div><div class="v num ${cls}">${eur(a.beneficio)}</div><div class="d">margen ${a.margen.toFixed(1)} %</div></div>
       <div><div class="k">Visible para</div><div class="v" style="font-size:15px">Solo dirección</div><div class="d">los empleados no ven este bloque ni los costes</div></div>`;
   } else pb.hidden = true;
   return {q,r};
 }
-["qTrabajos","qCeldaNombre","qCeldaPrecio","qNBms","qBmsNombre","qBmsPrecio","qModo","qDescCliente","qCosteCelda","qCosteBms","qEncargo","qCliente","qNif","qDir","qEmail","qBateria","qCelda","qNCeldas","qBms","qHoras","qDiag","qDto","qExtras","qNotas"].forEach(id => $(id).addEventListener("input", renderCalc));
+["qTrabajos","qCeldaNombre","qCeldaPrecio","qNBms","qBmsNombre","qBmsPrecio","qModo","qDescCliente","qPrecioCerrado","qCosteCelda","qCosteBms","qEncargo","qCliente","qNif","qDir","qEmail","qBateria","qCelda","qNCeldas","qBms","qHoras","qDiag","qDto","qExtras","qNotas"].forEach(id => $(id).addEventListener("input", renderCalc));
 $("qEncargo").addEventListener("change", () => { const e=encargos.find(x=>x.id===$("qEncargo").value); if(e){ $("qCliente").value=e.cliente; $("qBateria").value=[e.bateria,e.v?e.v+"V":"",e.ah?e.ah+"Ah":""].filter(Boolean).join(" "); } renderCalc(); });
 
 function nextNumPres(){
@@ -923,7 +930,7 @@ function newPres(){
   if(!selId){ $("qCliente").value=""; $("qBateria").value=""; }
   $("qNif").value=""; $("qDir").value=""; $("qEmail").value="";
   $("qCelda").value = tarifas.celdas[0]?.id||""; $("qNCeldas").value=0; $("qBms").value=tarifas.bms[0]?.id||""; $("qHoras").value=0; $("qDiag").value="1"; $("qDto").value=0; $("qExtras").value=""; $("qNotas").value=""; $("qTrabajos").value=""; $("hNumFactura").value="";
-  $("qCeldaNombre").value=""; $("qCeldaPrecio").value=""; $("qNBms").value=1; $("qBmsNombre").value=""; $("qBmsPrecio").value=""; $("qModo").value="linea"; $("qDescCliente").value=""; $("qCosteCelda").value=""; $("qCosteBms").value="";
+  descTocado = false; $("qPrecioCerrado").value=""; $("qCeldaNombre").value=""; $("qCeldaPrecio").value=""; $("qNBms").value=1; $("qBmsNombre").value=""; $("qBmsPrecio").value=""; $("qModo").value="linea"; $("qDescCliente").value=""; $("qCosteCelda").value=""; $("qCosteBms").value="";
   setPresEstado("borrador"); $("qDelWrap").innerHTML=""; renderCalc(); renderListaPres();
 }
 $("btnNuevoPres").addEventListener("click", newPres);
@@ -933,7 +940,7 @@ function openPres(id){
   curPresId = id; $("qTitle").textContent = p.num;
   $("qEncargo").value = p.encargoId||""; $("qCliente").value=p.cliente||""; $("qBateria").value=p.bateria||""; $("qNif").value=p.nif||""; $("qDir").value=p.dir||""; $("qEmail").value=p.email||"";
   $("qCelda").value=p.celdaId||""; $("qNCeldas").value=p.nCeldas||0; $("qBms").value=p.bmsId||""; $("qHoras").value=p.horas||0; $("qDiag").value=p.diagnosis?"1":"0"; $("qDto").value=p.dto||0; $("qExtras").value=p.extras||""; $("qNotas").value=p.notas||""; $("qTrabajos").value=p.trabajos||""; $("hNumFactura").value=p.numFactura||"";
-  $("qCeldaNombre").value=p.celdaNombre||""; $("qCeldaPrecio").value=p.celdaPrecio||""; $("qNBms").value=p.nBms??1; $("qBmsNombre").value=p.bmsNombre||""; $("qBmsPrecio").value=p.bmsPrecio||""; $("qModo").value=p.modo||"linea"; $("qDescCliente").value=p.descCliente||"";
+  $("qPrecioCerrado").value=p.precioCerrado??""; $("qCeldaNombre").value=p.celdaNombre||""; $("qCeldaPrecio").value=p.celdaPrecio||""; $("qNBms").value=p.nBms??1; $("qBmsNombre").value=p.bmsNombre||""; $("qBmsPrecio").value=p.bmsPrecio||""; $("qModo").value=p.modo||"linea"; $("qDescCliente").value=p.descCliente||""; descTocado = !!(p.descCliente && p.descCliente!==descAuto(p));
   $("qCosteCelda").value=p.interno?.costeCelda??""; $("qCosteBms").value=p.interno?.costeBms??"";
   if(false){ const myId=id; db.doc("config/costes/analitica/"+id).get().then(sn=>{ if(curPresId!==myId || !ex(sn)) return; const i=sn.data().interno||{}; $("qCosteCelda").value=i.costeCelda??""; $("qCosteBms").value=i.costeBms??""; renderCalc(); }).catch(()=>{}); }
   setPresEstado(p.estado||"borrador");
@@ -993,12 +1000,12 @@ function renderListaPres(){
 function descAuto(q){
   const e = encargos.find(x=>x.id===q.encargoId);
   const bat = q.bateria || e?.bateria || "batería de litio";
-  return `Reacondicionamiento de batería ${bat}`.replace(/\s+/g," ").trim();
+  return `Reacondicionamiento de batería · ${bat}`.replace(/\s+/g," ").trim();
 }
 // Líneas que ve el cliente: nunca modelos de celda ni costes.
 function clientLines(p){
   const ref = String(p.num||"BORR").replace(/[^A-Z0-9]/gi,"").slice(-8);
-  if((p.modo||"linea")==="linea"){
+  if((p.modo||"linea")==="linea" || (p.precioCerrado!=null && p.precioCerrado>0)){
     return [{ref:"REP"+ref, nombre:(p.descCliente||descAuto(p)), precio:p.base, dto:p.dto||0, uds:1, subtotal:p.base*(1-(p.dto||0)/100)}];
   }
   const nombreGen = l => l.kind==="celdas" ? `Sustitución de celdas de litio (${l.n} uds)` : l.kind==="bms" ? "Sustitución de BMS (sistema de gestión de batería)" : l.kind==="horas" ? "Mano de obra de taller" : l.kind==="diagnosis" ? "Diagnosis de la batería" : l.kind==="consumibles" ? "Consumibles varios" : l.c;
@@ -1174,7 +1181,7 @@ function renderTarifas(){
   $("tCeldas").innerHTML = tarifas.celdas.map((c,i)=>{ const coste = costes.celdas?.[c.id] ?? ""; const auto = pvpAuto(coste); const manual = c.pvpManual ? c.precio : "";
     return `<tr data-i="${i}" data-id="${esc(c.id)}"><td style="min-width:90px"><input type="text" data-k="marca" value="${esc(c.marca||"")}"></td><td style="min-width:100px"><input type="text" data-k="modelo" value="${esc(c.modelo)}"></td><td style="width:80px"><input type="text" data-k="formato" value="${esc(c.formato||"")}"></td><td style="width:96px"><input type="number" step="50" data-k="mah" value="${esc(c.mah??"")}"></td><td style="width:64px"><input type="text" data-k="descarga" value="${esc(c.descarga||"")}"></td><td style="width:100px"><input type="number" step="0.01" data-k="coste" value="${esc(coste)}"></td><td style="width:110px"><input type="number" step="0.01" data-k="pvp" value="${esc(manual)}" placeholder="${auto.toFixed(2)}" title="Automático: ${auto.toFixed(2)} €"></td><td class="act"><button class="iconbtn" data-del-celda="${i}" title="Quitar">✕</button></td></tr>`; }).join("") || `<tr><td colspan="8" class="muted">Sin celdas. Añade tus modelos.</td></tr>`;
   $("tBms").innerHTML = tarifas.bms.map((b,i)=>`<tr data-i="${i}" data-id="${esc(b.id)}"><td><input type="text" data-k="modelo" value="${esc(b.modelo)}"></td><td style="width:120px"><input type="text" data-k="serie" value="${esc(b.serie||"")}"></td><td style="width:84px">${i===0?"":`<input type="number" step="0.5" data-k="coste" value="${esc(costes.bms?.[b.id]??"")}">`}</td><td style="width:90px"><input type="number" step="0.5" data-k="precio" value="${esc(b.precio)}"${i===0?" disabled":""}></td><td class="act">${i===0?"":`<button class="iconbtn" data-del-bms="${i}" title="Quitar">✕</button>`}</td></tr>`).join("");
-  $("tHora").value = tarifas.hora; $("tHoraCoste").value = costes.hora ?? ""; $("tDiag").value = tarifas.diagnosis; $("tConsumibles").value = tarifas.consumibles ?? 5; $("tIva").value = tarifas.iva;
+  $("tHora").value = tarifas.hora; $("tHoraCoste").value = costes.hora ?? ""; $("tDiagCoste").value = costes.diagnosis ?? ""; $("tDiag").value = tarifas.diagnosis; $("tConsumibles").value = tarifas.consumibles ?? 5; $("tIva").value = tarifas.iva;
   $("tAlmacenes").value = config.almacenes.join("\n"); $("tEstados").value = config.estados.join("\n");
   const co = config.empresa||DEF_EMPRESA;
   $("tCoNombre").value=co.nombre||""; $("tCoRazon").value=co.razon||""; $("tCoNif").value=co.nif||""; $("tCoTel").value=co.tel||""; $("tCoDir").value=co.dir||""; $("tCoEmail").value=co.email||""; $("tCoWeb").value=co.web||""; $("tCoValidez").value=co.validez||15; $("tCoSerie").value=co.serie||""; $("tCoCond").value=co.cond||""; $("tCoBancos").value=co.bancos||""; $("tCoLegal").value=co.legal||"";
@@ -1190,7 +1197,7 @@ function readTarifasForm(){
     return {id, marca:g("marca").trim(), modelo:g("modelo").trim(), formato:g("formato").trim(), mah:+g("mah")||null, descarga:g("descarga").trim(), precio: pvpM!==""? +pvpM : pvpAuto(coste), pvpManual: pvpM!==""}; }).filter(c=>c.modelo||c.marca);
   tarifas.bms = [...$("tBms").querySelectorAll("tr[data-i]")].map(tr=>{ const g=k=>{const el=tr.querySelector(`[data-k=${k}]`); return el?el.value:"";}; const id=tr.dataset.id||("b"+Math.random().toString(36).slice(2,7)); if(g("coste")!=="") nb[id]=+g("coste")||0; return {id, modelo:g("modelo").trim(), serie:g("serie").trim(), precio:+g("precio")||0}; }).filter(b=>b.modelo);
   if(!tarifas.bms.some(b=>b.id==="b0")) tarifas.bms.unshift({id:"b0",modelo:"Sin BMS",serie:"",precio:0});
-  costes = {celdas:nc, bms:nb, hora:+$("tHoraCoste").value||0};
+  costes = {celdas:nc, bms:nb, hora:+$("tHoraCoste").value||0, diagnosis:+$("tDiagCoste").value||0};
   tarifas.hora = +$("tHora").value||0; tarifas.diagnosis = +$("tDiag").value||0; tarifas.consumibles = +$("tConsumibles").value||0; tarifas.iva = +$("tIva").value||0;
   config.almacenes = $("tAlmacenes").value.split("\n").map(s=>s.trim()).filter(Boolean);
   config.estados = $("tEstados").value.split("\n").map(s=>s.trim()).filter(Boolean);
@@ -1240,7 +1247,7 @@ function loadDemo(){
 }
 function subscribeAll(){
   db.doc("config/tarifas").onSnapshot(s => { if(ex(s)){ const d=s.data(); tarifas = {celdas:d.celdas||[], bms:d.bms||[], hora:d.hora??DEF_TARIFAS.hora, diagnosis:d.diagnosis??DEF_TARIFAS.diagnosis, iva:d.iva??DEF_TARIFAS.iva, margen:d.margen??DEF_TARIFAS.margen, margenCustom:d.margenCustom??DEF_TARIFAS.margenCustom, consumibles:d.consumibles??DEF_TARIFAS.consumibles}; } renderAll(); if($("view-tarifas").classList.contains("active")) renderTarifas(); }, e=>console.warn(e));
-  if(isAdmin) db.doc("config/costes").onSnapshot(s => { costes = ex(s) ? {celdas:s.data().celdas||{}, bms:s.data().bms||{}, hora:s.data().hora||0} : {celdas:{},bms:{},hora:0}; renderCalc(); if($("view-tarifas").classList.contains("active")) renderTarifas(); }, e=>console.warn(e)); else costes = {celdas:{},bms:{},hora:0};
+  if(isAdmin) db.doc("config/costes").onSnapshot(s => { costes = ex(s) ? {celdas:s.data().celdas||{}, bms:s.data().bms||{}, hora:s.data().hora||0, diagnosis:s.data().diagnosis||0} : {celdas:{},bms:{},hora:0,diagnosis:0}; renderCalc(); if($("view-tarifas").classList.contains("active")) renderTarifas(); }, e=>console.warn(e)); else costes = {celdas:{},bms:{},hora:0};
   db.doc("config/general").onSnapshot(s => { if(ex(s)){ const d=s.data(); config = {almacenes:d.almacenes?.length?d.almacenes:DEF_CONFIG.almacenes, estados:d.estados?.length?d.estados:DEF_CONFIG.estados, empresa:{...DEF_EMPRESA, ...(d.empresa||{})}}; } renderAll(); }, e=>console.warn(e));
   db.collection("encargos").onSnapshot(s => { encargos = s.docs.map(d=>({id:d.id, ...d.data()})); renderAll(); if(selId){ if(!encargos.some(e=>e.id===selId)){ selId=null; $("detalleBody").hidden=true; $("detalleEmpty").hidden=false; } else { const e=encargos.find(x=>x.id===selId); const fotos=(e.fotos||[]); $("dFotos").innerHTML = fotos.map(id => `<a class="foto" href="${esc(TL.blobUrl(id))}" target="_blank" rel="noopener"><img src="${esc(TL.blobUrl(id))}" alt="Foto de la batería"></a>`).join(""); $("dFotos").hidden=!fotos.length; } } }, e=>console.warn(e));
   db.collection("presupuestos").onSnapshot(s => { presupuestos = s.docs.map(d=>({id:d.id, ...d.data()})); renderAll(); if(curPresId){ renderHolded(); } }, e=>console.warn(e));

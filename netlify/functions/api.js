@@ -129,6 +129,7 @@ function calcAnalitica(doc, costes, interno) {
   if (nCeldas > 0 && doc.celdaId) desglose.push({ c: "Celdas", n: nCeldas, coste: cCelda, total: nCeldas * cCelda });
   if (nBms > 0 && doc.bmsId && doc.bmsId !== "b0" && (bmsPrecio == null || bmsPrecio > 0)) desglose.push({ c: "BMS", n: nBms, coste: cBms, total: nBms * cBms });
   if (horas > 0) desglose.push({ c: "Horas", n: horas, coste: cHora, total: horas * cHora });
+  if (doc.diagnosis && (+costes.diagnosis || 0) > 0) desglose.push({ c: "Diagnosis", n: 1, coste: +costes.diagnosis, total: +costes.diagnosis });
   const coste = desglose.reduce((a, d) => a + d.total, 0);
   const baseNeta = (+doc.base || 0) - (+doc.dtoImp || 0);
   const beneficio = baseNeta - coste;
