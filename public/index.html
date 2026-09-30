@@ -77,7 +77,28 @@ main{max-width:1280px;margin:0 auto;padding:18px 16px 60px}
 
 /* Layout two columns */
 .cols{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr);gap:16px;align-items:start}
-@media (max-width:900px){.cols{grid-template-columns:1fr}}
+@media (max-width:900px){.cols{grid-template-columns:minmax(0,1fr)}}
+select{max-width:100%}
+@media (max-width:640px){
+  .top{padding:0 12px}
+  .top-in{gap:6px 10px;min-height:0;padding-top:8px}
+  .brand h1{font-size:22px}
+  .brand span{display:none}
+  .who{margin-left:auto}
+  #btnLogout{padding:5px 9px;font-size:12px}
+  nav.tabs{order:5;width:100%;margin:0 -12px;padding:0 4px;justify-content:space-around;border-top:1px solid var(--line)}
+  nav.tabs button{padding:10px 6px 8px;font-size:16px;flex:1;text-align:center}
+  main{padding:12px 12px 90px}
+  .strip{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-bottom:12px}
+  .tile{padding:8px 10px}.tile .v{font-size:24px}.tile .eyebrow{font-size:10px}
+  .detail-h{flex-direction:column;align-items:stretch}
+  .detail-h h2{font-size:22px}
+  .filters{padding:8px 10px}
+  .panel-h{padding:10px 12px}.panel-b{padding:12px}
+  .row{padding:10px 10px}
+  .qsteps .btn{flex:1;justify-content:center}
+  .modal{padding:8px}.docsheet{padding:16px 14px}
+}
 .panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
 .panel-h{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--line);flex-wrap:wrap}
 .panel-h h2{font-size:20px;font-weight:600}
@@ -225,10 +246,10 @@ pre.code{font-family:var(--mono);font-size:11.5px;background:var(--surface);bord
 .profit .v{font-family:var(--display);font-size:22px;font-weight:700;line-height:1.1}
 .profit .v.neg{color:var(--crit)}.profit .v.pos{color:var(--ok)}
 .profit .d{font-size:11.5px;color:var(--ink-2)}
-#view-tarifas .cols{grid-template-columns:1fr}
+#view-tarifas .cols{grid-template-columns:minmax(0,1fr)}
 .tar-rest{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;align-items:start}
 .tar-rest > :last-child{grid-column:1/-1}
-@media (max-width:900px){.tar-rest{grid-template-columns:1fr}}
+@media (max-width:900px){.tar-rest{grid-template-columns:minmax(0,1fr)}}
 #tCeldas{min-width:0}
 .tar.celdas{min-width:780px}
 .interno{margin-top:12px;border:1px dashed var(--line-strong);border-radius:var(--radius);padding:10px 12px;background:var(--surface)}
@@ -639,6 +660,7 @@ function selectEncargo(id){
   $("detalleEmpty").hidden = !!e; $("detalleBody").hidden = !e;
   $("formPanel").hidden = true;
   if(!e) return;
+  if(window.innerWidth <= 900) setTimeout(() => $("detalle").scrollIntoView({behavior:"smooth", block:"start"}), 50);
   $("dRef").textContent = `${e.ref} · entrada ${e.fecha||"—"}`;
   $("dTitulo").textContent = e.cliente;
   $("dSub").textContent = [e.bateria, e.v?`${e.v} V`:"", e.ah?`${e.ah} Ah`:""].filter(Boolean).join(" · ");
@@ -918,6 +940,7 @@ function openPres(id){
   $("qDelWrap").innerHTML = readOnly? "" : `<button class="btn sm danger" id="qDel">Eliminar</button>`;
   const d=$("qDel"); if(d) d.addEventListener("click", () => confirmInline($("qDelWrap"), "¿Eliminar este presupuesto?", async () => { if(demoMode()){ presupuestos=presupuestos.filter(x=>x.id!==id); newPres(); return; } await db.doc("presupuestos/"+id).delete(); newPres(); toast("Presupuesto eliminado"); }));
   renderCalc(); renderListaPres(); renderHolded();
+  if(window.innerWidth <= 900) setTimeout(() => $("qTitle").closest(".panel").scrollIntoView({behavior:"smooth", block:"start"}), 50);
 }
 async function savePres(estado){
   const {q,r} = renderCalc();
