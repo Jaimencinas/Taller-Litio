@@ -398,11 +398,11 @@ body[data-auth="out"] .top, body[data-auth="out"] main{visibility:hidden}
           <label class="f">Modelo de celda<select id="qCelda"></select></label>
           <label class="f">Nº de celdas a reparar<input type="number" id="qNCeldas" min="0" step="1" value="0"></label>
           <label class="f" id="qCeldaCustomWrap" hidden>Modelo de celda (personalizado)<input type="text" id="qCeldaNombre" placeholder="Ej. Molicel P42A 21700 4200mAh"></label>
-          <label class="f admin-only" id="qCosteCeldaWrap" hidden>Coste €/celda que nos sale<input type="number" id="qCosteCelda" step="0.01" min="0" placeholder="0,00"></label>
+          <label class="f" id="qCosteCeldaWrap" hidden>Coste €/celda que nos sale<input type="number" id="qCosteCelda" step="0.01" min="0" placeholder="0,00"></label>
           <label class="f">BMS<select id="qBms"></select></label>
           <label class="f">Unidades de BMS<input type="number" id="qNBms" min="0" step="1" value="1"></label>
           <label class="f" id="qBmsCustomWrap" hidden>Modelo de BMS (personalizado)<input type="text" id="qBmsNombre" placeholder="Ej. BMS 10S 36V 40A con balanceo"></label>
-          <label class="f admin-only" id="qCosteBmsWrap" hidden>Coste €/BMS que nos sale<input type="number" id="qCosteBms" step="0.01" min="0" placeholder="0,00"></label>
+          <label class="f" id="qCosteBmsWrap" hidden>Coste €/BMS que nos sale<input type="number" id="qCosteBms" step="0.01" min="0" placeholder="0,00"></label>
           <input type="hidden" id="qCeldaPrecio"><input type="hidden" id="qBmsPrecio">
           <label class="f">Horas de trabajo<input type="number" id="qHoras" min="0" step="0.25" value="0"></label>
           <label class="f">Diagnosis<select id="qDiag"><option value="1">Sí, con diagnosis</option><option value="0">No</option></select></label>
@@ -862,10 +862,10 @@ function calcLineas(q, it){
     analitica:{ coste:costeTotal, beneficio, margen, desglose:L.filter(l=>l.coste).map(l=>({c:l.c, n:l.n, coste:l.coste, total:l.n*l.coste})) }};
 }
 function renderCalc(){
-  const q = Q(); const it = isAdmin ? INT() : {}; const r = calcLineas(q, it);
+  const q = Q(); const it = INT(); const r = calcLineas(q, it);
   const mC = (+tarifas.margenCustom||0)/100; const pvpC = c => Math.round((+c||0)*(1+mC)*100)/100;
-  if(isAdmin && $("qCelda").value==="custom" && $("qCosteCelda").value!=="") $("qCeldaPrecio").value = pvpC($("qCosteCelda").value);
-  if(isAdmin && $("qBms").value==="custom" && $("qCosteBms").value!=="") $("qBmsPrecio").value = pvpC($("qCosteBms").value);
+  if($("qCelda").value==="custom" && $("qCosteCelda").value!=="") $("qCeldaPrecio").value = pvpC($("qCosteCelda").value);
+  if($("qBms").value==="custom" && $("qCosteBms").value!=="") $("qBmsPrecio").value = pvpC($("qCosteBms").value);
   const isCustom = q.celdaId==="custom"; $("qCeldaCustomWrap").hidden = !isCustom; $("qCosteCeldaWrap").hidden = !isCustom;
   const isCustomB = q.bmsId==="custom"; $("qBmsCustomWrap").hidden = !isCustomB; $("qCosteBmsWrap").hidden = !isCustomB;
   if(!$("qDescCliente").value.trim()) $("qDescCliente").placeholder = descAuto(q);
@@ -912,8 +912,8 @@ function openPres(id){
   $("qEncargo").value = p.encargoId||""; $("qCliente").value=p.cliente||""; $("qBateria").value=p.bateria||""; $("qNif").value=p.nif||""; $("qDir").value=p.dir||""; $("qEmail").value=p.email||"";
   $("qCelda").value=p.celdaId||""; $("qNCeldas").value=p.nCeldas||0; $("qBms").value=p.bmsId||""; $("qHoras").value=p.horas||0; $("qDiag").value=p.diagnosis?"1":"0"; $("qDto").value=p.dto||0; $("qExtras").value=p.extras||""; $("qNotas").value=p.notas||""; $("qTrabajos").value=p.trabajos||""; $("hNumFactura").value=p.numFactura||"";
   $("qCeldaNombre").value=p.celdaNombre||""; $("qCeldaPrecio").value=p.celdaPrecio||""; $("qNBms").value=p.nBms??1; $("qBmsNombre").value=p.bmsNombre||""; $("qBmsPrecio").value=p.bmsPrecio||""; $("qModo").value=p.modo||"linea"; $("qDescCliente").value=p.descCliente||"";
-  $("qCosteCelda").value=""; $("qCosteBms").value="";
-  if(isAdmin && db){ const myId=id; db.doc("config/costes/analitica/"+id).get().then(sn=>{ if(curPresId!==myId || !ex(sn)) return; const i=sn.data().interno||{}; $("qCosteCelda").value=i.costeCelda??""; $("qCosteBms").value=i.costeBms??""; renderCalc(); }).catch(()=>{}); }
+  $("qCosteCelda").value=p.interno?.costeCelda??""; $("qCosteBms").value=p.interno?.costeBms??"";
+  if(false){ const myId=id; db.doc("config/costes/analitica/"+id).get().then(sn=>{ if(curPresId!==myId || !ex(sn)) return; const i=sn.data().interno||{}; $("qCosteCelda").value=i.costeCelda??""; $("qCosteBms").value=i.costeBms??""; renderCalc(); }).catch(()=>{}); }
   setPresEstado(p.estado||"borrador");
   $("qDelWrap").innerHTML = readOnly? "" : `<button class="btn sm danger" id="qDel">Eliminar</button>`;
   const d=$("qDel"); if(d) d.addEventListener("click", () => confirmInline($("qDelWrap"), "¿Eliminar este presupuesto?", async () => { if(demoMode()){ presupuestos=presupuestos.filter(x=>x.id!==id); newPres(); return; } await db.doc("presupuestos/"+id).delete(); newPres(); toast("Presupuesto eliminado"); }));
@@ -921,7 +921,7 @@ function openPres(id){
 }
 async function savePres(estado){
   const {q,r} = renderCalc();
-  const p = {...q, lineas:r.lineas, base:r.base, dtoImp:r.dtoImp, iva:r.iva, ivaPct:+tarifas.iva||0, total:r.total, estado: estado || (presupuestos.find(x=>x.id===curPresId)?.estado) || "borrador", updatedAt:Date.now(), numFactura:$("hNumFactura").value.trim()||null};
+  const p = {...q, interno:INT(), lineas:r.lineas, base:r.base, dtoImp:r.dtoImp, iva:r.iva, ivaPct:+tarifas.iva||0, total:r.total, estado: estado || (presupuestos.find(x=>x.id===curPresId)?.estado) || "borrador", updatedAt:Date.now(), numFactura:$("hNumFactura").value.trim()||null};
   if(!p.cliente && !p.encargoId){ toast("Indica el cliente o asocia un encargo"); return null; }
   try{
     if(curPresId){
@@ -931,7 +931,6 @@ async function savePres(estado){
       if(demoMode()){ curPresId="p"+Math.random().toString(36).slice(2,8); presupuestos.push({id:curPresId,...p}); }
       else { const ref = await db.collection("presupuestos").add(p); curPresId = ref.id; presupuestos.push({id:curPresId,...p}); }
     }
-    if(isAdmin && !demoMode()){ const it = INT(); if(it.costeCelda!=null || it.costeBms!=null){ try{ await db.doc("config/costes/analitica/"+curPresId).set({interno:it}); }catch(err){ console.warn("analitica", err); } } }
     $("qTitle").textContent = presupuestos.find(x=>x.id===curPresId)?.num || $("qTitle").textContent;
     setPresEstado(p.estado); renderListaPres(); renderHolded();
     if(p.encargoId && estado){

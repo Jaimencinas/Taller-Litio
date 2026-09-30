@@ -33,11 +33,12 @@ function notaFields(encargoId, n) {
 }
 function presToDoc(r, admin) {
   const f = r.fields; const d = parseJSON(f["Datos"], {});
-  const doc = { ...d, id: f["ID"], num: f["Número"] || d.num, encargoId: f["Encargo"] || d.encargoId || null, cliente: f["Cliente"] || d.cliente || "", nif: f["NIF"] || "", dir: f["Dirección"] || "", email: f["Email"] || "", bateria: f["Batería"] || "", estado: f["Estado"] || "borrador", base: num(f["Base"]) ?? d.base, iva: num(f["IVA"]) ?? d.iva, total: num(f["Total"]) ?? d.total, numFactura: f["Nº factura"] || null };
+  const interno = (parseJSON(f["Interno"], {}).interno) || {};
+  const doc = { ...d, interno: { costeCelda: interno.costeCelda ?? null, costeBms: interno.costeBms ?? null }, id: f["ID"], num: f["Número"] || d.num, encargoId: f["Encargo"] || d.encargoId || null, cliente: f["Cliente"] || d.cliente || "", nif: f["NIF"] || "", dir: f["Dirección"] || "", email: f["Email"] || "", bateria: f["Batería"] || "", estado: f["Estado"] || "borrador", base: num(f["Base"]) ?? d.base, iva: num(f["IVA"]) ?? d.iva, total: num(f["Total"]) ?? d.total, numFactura: f["Nº factura"] || null };
   return doc;
 }
 function presFields(d) {
-  const { id, num: n, encargoId, cliente, nif, dir, email, bateria, estado, base, iva, total, numFactura, ...rest } = d;
+  const { id, num: n, encargoId, cliente, nif, dir, email, bateria, estado, base, iva, total, numFactura, interno, ...rest } = d;
   return { "ID": id, "Número": n || "", "Encargo": encargoId || "", "Cliente": cliente || "", "NIF": nif || "", "Dirección": dir || "", "Email": email || "", "Batería": bateria || "", "Estado": estado || "borrador", "Base": num(base), "IVA": num(iva), "Total": num(total), "Nº factura": numFactura || "", "Datos": JSON.stringify(rest) };
 }
 const analToDoc = (r) => { const f = r.fields; return { presId: f["ID"], num: f["Número"], estado: f["Estado"], coste: num(f["Coste"]), beneficio: num(f["Beneficio"]), margen: num(f["Margen %"]), ...parseJSON(f["Interno"], {}) }; };
@@ -136,8 +137,10 @@ function calcAnalitica(doc, costes, interno) {
 async function writePres(id, doc, admin) {
   const rec = await findByField(T.pres, "ID", id);
   const prevInterno = rec ? (parseJSON(rec.fields["Interno"], {}).interno || {}) : {};
+  const sent = doc.interno && typeof doc.interno === "object" ? doc.interno : null;
+  const interno = sent ? { costeCelda: sent.costeCelda == null || sent.costeCelda === "" ? null : +sent.costeCelda, costeBms: sent.costeBms == null || sent.costeBms === "" ? null : +sent.costeBms } : prevInterno;
   const costes = await loadCostes();
-  const an = calcAnalitica({ ...doc, id }, costes, prevInterno);
+  const an = calcAnalitica({ ...doc, id }, costes, interno);
   const fields = { ...presFields({ ...doc, id }), ...analFields(an) };
   const r = rec ? await updateRec(T.pres, rec.id, fields) : await createRec(T.pres, fields);
   return { doc: presToDoc(r, admin), analitica: admin ? analToDoc(r) : undefined };
