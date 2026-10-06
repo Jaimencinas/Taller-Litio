@@ -4,11 +4,13 @@
 //   POST /.netlify/functions/api  {op:"setup"}         → crea las tablas en Airtable y carga las semillas (solo admin)
 // Rutas de documento (las mismas que usaba la página):
 //   encargos/{id} · notas/{encargoId} · presupuestos/{id} · config/{clave} · config/costes/analitica/{presId}
+// Claves de config: general, tarifas, costes (solo admin), gastos (solo admin: gastos fijos para la rentabilidad).
 const { json, sessionFrom, configured, at, listAll, findByField, createRec, updateRec, deleteRec, uploadAttachment, BASE } = require("./_lib");
 const SEED = require("./_seed.json");
 
 const T = { enc: "Encargos", notas: "Notas", pres: "Presupuestos", config: "Config" };
 const ADMIN_PRES_FIELDS = ["Coste", "Beneficio", "Margen %", "Interno"];
+const ADMIN_CONFIG = new Set(["costes", "gastos"]); // claves de Config que un empleado nunca recibe
 const newId = () => Math.random().toString(36).slice(2, 12) + Date.now().toString(36);
 const num = (v) => (v === "" || v == null || isNaN(+v) ? null : +v);
 const parseJSON = (s, d) => { try { return s ? JSON.parse(s) : d; } catch { return d; } };
@@ -51,7 +53,7 @@ async function readState(admin) {
   const notasMap = {};
   notas.forEach((r) => { const e = r.fields["Encargo"]; if (!e) return; (notasMap[e] = notasMap[e] || { encargoId: e, items: [] }).items.push(notaToItem(r, adj)); });
   const config = {};
-  cfg.forEach((r) => { const k = r.fields["Clave"]; if (!k) return; if (k === "costes" && !admin) return; config[k] = parseJSON(r.fields["JSON"], {}); });
+  cfg.forEach((r) => { const k = r.fields["Clave"]; if (!k) return; if (ADMIN_CONFIG.has(k) && !admin) return; config[k] = parseJSON(r.fields["JSON"], {}); });
   const analitica = {};
   if (admin) pres.forEach((r) => { if (r.fields["Coste"] != null) analitica[r.fields["ID"]] = analToDoc(r); });
   return { encargos: enc.map((r) => encToDoc(r, adj)).filter((d) => d.id), notas: notasMap, presupuestos: pres.map((r) => presToDoc(r, admin)).filter((d) => d.id), config, analitica, adjuntos: adj, ts: Date.now() };
@@ -117,29 +119,44 @@ async function loadCostes() {
   const r = await findByField(T.config, "Clave", "costes");
   return r ? parseJSON(r.fields["JSON"], {}) : {};
 }
-// Coste real del presupuesto a partir de las tarifas internas (+ ajustes internos del admin)
+// Coste real del presupuesto a partir de las tarifas internas (+ ajustes internos del admin).
+// Un presupuesto puede llevar varios productos (doc.productos); los antiguos llevan uno solo en campos sueltos.
+function productosDe(doc, interno) {
+  if (Array.isArray(doc.productos) && doc.productos.length) return doc.productos.map((p) => ({ ...p, interno: p.interno || {} }));
+  return [{ celdaId: doc.celdaId, nCeldas: doc.nCeldas, bmsId: doc.bmsId, nBms: doc.nBms, bmsPrecio: doc.bmsPrecio, horas: doc.horas, diagnosis: doc.diagnosis, interno: interno || {} }];
+}
 function calcAnalitica(doc, costes, interno) {
   interno = interno || {};
-  const cCelda = interno.costeCelda != null ? +interno.costeCelda : (+(costes.celdas || {})[doc.celdaId] || 0);
-  const cBms = interno.costeBms != null ? +interno.costeBms : (+(costes.bms || {})[doc.bmsId] || 0);
+  const prods = productosDe(doc, interno); const multi = prods.length > 1;
   const cHora = +costes.hora || 0;
-  const nCeldas = +doc.nCeldas || 0, nBms = doc.nBms == null ? 1 : +doc.nBms, horas = +doc.horas || 0;
-  const bmsPrecio = doc.bmsId === "custom" ? +doc.bmsPrecio : null;
   const desglose = [];
-  if (nCeldas > 0 && doc.celdaId) desglose.push({ c: "Celdas", n: nCeldas, coste: cCelda, total: nCeldas * cCelda });
-  if (nBms > 0 && doc.bmsId && doc.bmsId !== "b0" && (bmsPrecio == null || bmsPrecio > 0)) desglose.push({ c: "BMS", n: nBms, coste: cBms, total: nBms * cBms });
-  if (horas > 0) desglose.push({ c: "Horas", n: horas, coste: cHora, total: horas * cHora });
-  if (doc.diagnosis && (+costes.diagnosis || 0) > 0) desglose.push({ c: "Diagnosis", n: 1, coste: +costes.diagnosis, total: +costes.diagnosis });
+  prods.forEach((p, i) => {
+    const it = p.interno || {}; const tag = multi ? { prod: i } : {};
+    const cCelda = it.costeCelda != null ? +it.costeCelda : (+(costes.celdas || {})[p.celdaId] || 0);
+    const cBms = it.costeBms != null ? +it.costeBms : (+(costes.bms || {})[p.bmsId] || 0);
+    const nCeldas = +p.nCeldas || 0, nBms = p.nBms == null ? 1 : +p.nBms, horas = +p.horas || 0;
+    const bmsPrecio = p.bmsId === "custom" ? +p.bmsPrecio : null;
+    if (nCeldas > 0 && p.celdaId) desglose.push({ c: "Celdas", n: nCeldas, coste: cCelda, total: nCeldas * cCelda, ...tag });
+    if (nBms > 0 && p.bmsId && p.bmsId !== "b0" && (bmsPrecio == null || bmsPrecio > 0)) desglose.push({ c: "BMS", n: nBms, coste: cBms, total: nBms * cBms, ...tag });
+    if (horas > 0) desglose.push({ c: "Horas", n: horas, coste: cHora, total: horas * cHora, ...tag });
+    if (p.diagnosis && (+costes.diagnosis || 0) > 0) desglose.push({ c: "Diagnosis", n: 1, coste: +costes.diagnosis, total: +costes.diagnosis, ...tag });
+  });
   const coste = desglose.reduce((a, d) => a + d.total, 0);
   const baseNeta = (+doc.base || 0) - (+doc.dtoImp || 0);
   const beneficio = baseNeta - coste;
   return { coste, beneficio, margen: baseNeta > 0 ? beneficio / baseNeta * 100 : 0, baseNeta, desglose, interno };
 }
+const esAprobado = (e) => e === "aprobado" || e === "facturado";
 async function writePres(id, doc, admin) {
   const rec = await findByField(T.pres, "ID", id);
   const prevInterno = rec ? (parseJSON(rec.fields["Interno"], {}).interno || {}) : {};
   const sent = doc.interno && typeof doc.interno === "object" ? doc.interno : null;
   const interno = sent ? { costeCelda: sent.costeCelda == null || sent.costeCelda === "" ? null : +sent.costeCelda, costeBms: sent.costeBms == null || sent.costeBms === "" ? null : +sent.costeBms } : prevInterno;
+  // Fecha de aprobación (para la rentabilidad por fechas): se fija al aprobar y se conserva al facturar.
+  doc = { ...doc };
+  if (esAprobado(doc.estado)) {
+    if (!doc.aprobadoAt) { const prev = rec ? presToDoc(rec, true) : null; doc.aprobadoAt = prev && esAprobado(prev.estado) ? (prev.updatedAt || prev.createdAt || Date.now()) : Date.now(); }
+  } else delete doc.aprobadoAt;
   const costes = await loadCostes();
   const an = calcAnalitica({ ...doc, id }, costes, interno);
   const fields = { ...presFields({ ...doc, id }), ...analFields(an) };
@@ -166,7 +183,7 @@ async function readDoc(rt, admin) {
   if (rt.kind === "encargo") { const r = await findByField(T.enc, "ID", rt.id); return { doc: r ? encToDoc(r, adj) : null, adjuntos: adj }; }
   if (rt.kind === "notas") { const rs = await listAll(T.notas, { filterByFormula: `{Encargo}='${rt.id}'` }); return { doc: rs.length ? { encargoId: rt.id, items: rs.map((r) => notaToItem(r, adj)) } : null, adjuntos: adj }; }
   if (rt.kind === "pres") { const r = await findByField(T.pres, "ID", rt.id); return { doc: r ? presToDoc(r, admin) : null }; }
-  if (rt.kind === "config") { if (rt.id === "costes" && !admin) return { doc: null }; const r = await findByField(T.config, "Clave", rt.id); return { doc: r ? parseJSON(r.fields["JSON"], {}) : null }; }
+  if (rt.kind === "config") { if (ADMIN_CONFIG.has(rt.id) && !admin) return { doc: null }; const r = await findByField(T.config, "Clave", rt.id); return { doc: r ? parseJSON(r.fields["JSON"], {}) : null }; }
   if (rt.kind === "analitica") { if (!admin) return { doc: null }; const r = await findByField(T.pres, "ID", rt.id); return { doc: r && r.fields["Coste"] != null ? analToDoc(r) : null }; }
   return { doc: null };
 }

@@ -197,5 +197,6 @@
     },
   };
 
-  window.TL = { configured: true, db, assets, user, downloads, auth, blobUrl, admin: { holdedFactura: auth.holdedFactura } };
+  // analitica(): costes y beneficio de cada presupuesto calculados en el servidor (solo llegan al administrador)
+  window.TL = { configured: true, db, assets, user, downloads, auth, blobUrl, analitica: () => state.analitica || {}, admin: { holdedFactura: auth.holdedFactura } };
 })();

@@ -6,9 +6,13 @@ Página estática (`public/`) + funciones de Netlify (`netlify/functions/`) + **
 ## Cómo funciona
 - **Dos accesos fijos**: *Empleado* y *Administrador*, cada uno con su contraseña. Al entrar, cada persona escribe su nombre para firmar sus notas.
 - **Empleado**: Encargos completo (crear, anotar, fotos, audios, estado y almacén) y Presupuestos completo (crear, modificar, enviar, aprobar, PDF), pero sin ver costes ni beneficio.
-- **Administrador**: todo lo anterior más coste y beneficio de cada presupuesto (calculados en el servidor con las tarifas internas), tarifas y datos de empresa.
+- **Administrador**: todo lo anterior más coste y beneficio de cada presupuesto (calculados en el servidor con las tarifas internas), tarifas y datos de empresa, y la pestaña **Rentabilidad**.
+- **Varios productos por presupuesto**: en la calculadora, «+ Añadir producto» crea Producto B, C… Cada producto tiene sus propias celdas, BMS, horas, diagnosis, otros conceptos, precio cerrado y trabajos realizados; el presupuesto suma todos. Los presupuestos anteriores (un solo producto) se abren y se guardan igual que siempre.
+- **Descarga del PDF**: en cuanto un presupuesto está marcado como *enviado* aparece el botón «⬇ Descargar PDF» junto a las acciones.
+- **Rentabilidad** (solo administrador): presupuestos aprobados y facturados con ingresos sin IVA, costes directos y beneficio; gastos fijos (mensuales, anuales o puntuales); beneficio neto, punto de equilibrio, gráfica mensual, filtro por fechas y exportación a CSV.
 - La clave de Airtable vive solo en Netlify; el navegador nunca la ve. La función `api` aplica los permisos por rol (un empleado nunca recibe costes ni beneficios).
 - Datos en Airtable, base **Taller Litio** (`app5zyLy77zW0ymtp`): tablas `Encargos`, `Notas`, `Presupuestos` y `Config`. Fotos y audios van como adjuntos de Airtable.
+- Los productos de cada presupuesto y su fecha de aprobación van dentro del campo `Datos` de `Presupuestos`; los gastos fijos, en `Config` con la clave `gastos` (el servidor nunca la envía a un empleado). No hace falta crear tablas ni campos nuevos en Airtable.
 
 ## Puesta en marcha en Netlify (una sola vez)
 1. **Add new site → Import an existing project → GitHub → `Taller-Litio`**. La configuración de build ya está en `netlify.toml`.
