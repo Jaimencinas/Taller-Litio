@@ -297,6 +297,16 @@ body[data-auth="out"] .top, body[data-auth="out"] main{visibility:hidden}
 .muted{color:var(--ink-3)}
 .status-line{font-size:12px;color:var(--ink-3);padding:6px 16px 0;max-width:1280px;margin:0 auto}
 
+/* Señal de diagnosis */
+.senal{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;border:1px dashed var(--line-strong);border-radius:var(--radius);padding:10px 12px;background:var(--surface-2)}
+.senal.ok{border-style:solid;border-color:var(--ok);background:var(--ok-soft)}
+.senal-btn{font-weight:600}
+.senal.ok .senal-btn{background:var(--ok);border-color:var(--ok);color:#fff}
+.senal .hint{flex-basis:100%}
+.senal b.chk{color:var(--ok);font-weight:600}
+.chip.senal-chip{background:var(--ok-soft);color:var(--ok)}
+.chip.senal-no{background:var(--warn-soft);color:var(--warn)}
+
 /* Productos del presupuesto */
 .prodhead{margin-top:16px}
 .prodbar{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:6px}
@@ -417,6 +427,7 @@ body[data-auth="out"] .top, body[data-auth="out"] main{visibility:hidden}
             <label class="f">Estado del pedido<select id="dEstado"></select></label>
             <label class="f">Almacén actual<select id="dAlmacen"></select></label>
           </div>
+          <div class="senal" id="dSenalBox" style="margin-top:12px"></div>
           <dl class="kv" style="margin-top:12px" id="dKv"></dl>
           <div class="fotos fotos-view" id="dFotos" style="margin-top:12px"></div>
         </div>
@@ -452,6 +463,11 @@ body[data-auth="out"] .top, body[data-auth="out"] main{visibility:hidden}
         <label class="f">Estado<select id="eEstado"></select></label>
         <label class="f">Almacén<select id="eAlmacen"></select></label>
         <label class="f span2">Síntoma / descripción<textarea id="eDesc" placeholder="No carga, se apaga bajo carga, BMS bloqueado…"></textarea></label>
+        <div class="span2 senal" id="eSenalBox">
+          <button type="button" class="btn senal-btn" id="eSenal" aria-pressed="false">☐ Señal de diagnosis obligatoria</button>
+          <label class="f" style="width:110px">Importe (€)<input type="number" id="eSenalImporte" min="0" step="0.5"></label>
+          <span class="hint" id="eSenalHint">Pulsa el botón para confirmar que el cliente deja la señal.</span>
+        </div>
         <div class="span2">
           <div class="eyebrow" style="margin-bottom:6px">Fotos de la batería (hasta 3)</div>
           <div class="fotos" id="eFotos"></div>
@@ -533,7 +549,7 @@ body[data-auth="out"] .top, body[data-auth="out"] main{visibility:hidden}
           <button class="btn primary" id="qGuardar">Guardar presupuesto</button>
           <button class="btn" id="qVista">👁 Vista previa / PDF</button>
           <button class="btn" id="qEnviado">Marcar enviado</button>
-          <button class="btn dl" id="qDescargar" hidden title="Descarga el PDF del presupuesto enviado">⬇ Descargar PDF</button>
+          <button class="btn dl" id="qDescargar" hidden title="Descarga el PDF del presupuesto enviado">⬇ Descarga Archivo</button>
           <button class="btn" id="qAprobar">✓ Aprobar</button>
           <button class="btn" id="qRechazar">Rechazar</button>
           <span id="qDelWrap" style="margin-left:auto"></span>
@@ -622,6 +638,7 @@ body[data-auth="out"] .top, body[data-auth="out"] main{visibility:hidden}
           <label class="f">Diagnosis PVP (€)<input type="number" id="tDiag" step="0.5"></label>
           <label class="f admin-only">Coste interno diagnosis (€)<input type="number" id="tDiagCoste" step="0.5" min="0"></label>
           <label class="f">Consumibles varios (€, en cada presupuesto)<input type="number" id="tConsumibles" step="0.5" min="0"></label>
+          <label class="f">Señal de diagnosis (€, al dejar la batería)<input type="number" id="tSenal" step="0.5" min="0"></label>
           <label class="f">IVA (%)<input type="number" id="tIva" step="1"></label>
         </div>
       </div>
@@ -699,7 +716,7 @@ const DEF_TARIFAS = {
     {id:"b1", modelo:"BMS 10S 36V 25A", serie:"10S · 25A", precio:24, ejemplo:true},
     {id:"b2", modelo:"BMS 13S 48V 30A", serie:"13S · 30A", precio:32, ejemplo:true},
   ],
-  hora: 38, diagnosis: 25, iva: 21, margen: 20, margenCustom: 40, consumibles: 5,
+  hora: 38, diagnosis: 25, iva: 21, margen: 20, margenCustom: 40, consumibles: 5, senal: 30,
 };
 const DEF_COSTES = { celdas: {"c01": 1.47, "c02": 1.51, "c03": 1.47, "c04": 2.39, "c05": 2.44, "c06": 2.0, "c07": 2.17, "c08": 1.65, "c09": 1.12, "c10": 1.21, "c11": 1.34, "c12": 2.61, "c13": 1.73, "c14": 0.94, "c15": 0.99, "c16": 1.12, "c17": 1.31, "c18": 2.53}, bms: {b1:18, b2:24}, hora: 20 };
 
@@ -776,7 +793,7 @@ function renderLista(){
     <button class="row" data-id="${esc(e.id)}" aria-current="${e.id===selId}">
       <div class="ref">${esc(e.ref)}</div>
       <div style="min-width:0"><div class="t">${esc(e.cliente)}</div><div class="m">${esc(e.bateria)}${e.v?` · ${esc(e.v)}V`:""}${e.ah?` ${esc(e.ah)}Ah`:""}</div></div>
-      <div class="r"><span class="chip ${chipClass(e.estado)}">${esc(e.estado)}</span><span class="wh">${esc(e.almacen||"—")}</span><span class="age">${ago(e.updatedAt||e.createdAt)}</span></div>
+      <div class="r"><span class="chip ${chipClass(e.estado)}">${esc(e.estado)}</span>${e.senal?`<span class="chip senal-chip" title="Señal de diagnosis recibida">✓ Señal ${eur(e.senalImporte??tarifas.senal)}</span>`:""}<span class="wh">${esc(e.almacen||"—")}</span><span class="age">${ago(e.updatedAt||e.createdAt)}</span></div>
     </button>`).join("");
   $("lista").querySelectorAll(".row").forEach(r => r.addEventListener("click", () => selectEncargo(r.dataset.id)));
 }
@@ -796,6 +813,7 @@ function selectEncargo(id){
   fillSelect($("dEstado"), config.estados.includes(e.estado)?config.estados:[e.estado,...config.estados], {value:e.estado});
   fillSelect($("dAlmacen"), config.almacenes.includes(e.almacen)?config.almacenes:[e.almacen,...config.almacenes], {value:e.almacen});
   const pres = presupuestos.filter(p=>p.encargoId===e.id);
+  renderSenalDetalle(e);
   $("dKv").innerHTML = `
     <dt>Teléfono</dt><dd>${esc(e.tel||"—")}</dd>
     <dt>Síntoma</dt><dd>${esc(e.desc||"—")}</dd>
@@ -910,6 +928,24 @@ $("btnPublicar").addEventListener("click", async () => {
   $("btnPublicar").disabled = false;
 });
 
+// ---------- Señal de diagnosis ----------
+function setSenalForm(on, importe){
+  const b = $("eSenal"); b.setAttribute("aria-pressed", String(on));
+  b.textContent = on ? "✓ Señal de diagnosis recibida" : "☐ Señal de diagnosis obligatoria";
+  $("eSenalBox").classList.toggle("ok", on);
+  if(importe!=null) $("eSenalImporte").value = importe;
+  $("eSenalHint").textContent = on ? "El cliente ha dejado la señal. Quedará guardado en el encargo y en el seguimiento." : "Pulsa el botón para confirmar que el cliente deja la señal.";
+}
+$("eSenal").addEventListener("click", () => setSenalForm($("eSenal").getAttribute("aria-pressed")!=="true"));
+function renderSenalDetalle(e){
+  const box = $("dSenalBox");
+  if(e.senal) box.innerHTML = `<b class="chk">✓ Señal de diagnosis recibida · ${eur(e.senalImporte??tarifas.senal)}</b>${readOnly?"":`<button class="btn sm" id="dSenalQuitar" style="margin-left:auto">Quitar señal</button>`}`;
+  else box.innerHTML = `<span class="chip senal-no">Sin señal de diagnosis</span>${readOnly?"":`<button class="btn sm primary" id="dSenalMarcar">✓ Marcar señal recibida (${eur(tarifas.senal)})</button>`}`;
+  box.classList.toggle("ok", !!e.senal);
+  const m = $("dSenalMarcar"); if(m) m.addEventListener("click", async () => { m.disabled=true; try{ await updateEncargo(e.id, {senal:true, senalImporte:+tarifas.senal||0}); await addNota({tipo:"sistema", texto:`Señal de diagnosis recibida · ${eur(tarifas.senal)}`}); toast("Señal registrada"); }catch(err){ toast("No se pudo guardar: "+(err.message||err.code)); m.disabled=false; } });
+  const q = $("dSenalQuitar"); if(q) q.addEventListener("click", async () => { q.disabled=true; try{ await updateEncargo(e.id, {senal:false, senalImporte:null}); await addNota({tipo:"sistema", texto:"Señal de diagnosis anulada"}); toast("Señal quitada"); }catch(err){ toast("No se pudo guardar: "+(err.message||err.code)); q.disabled=false; } });
+}
+
 // ---------- Form nuevo / editar ----------
 function nextRef(){
   const y = new Date().getFullYear().toString().slice(2);
@@ -954,12 +990,14 @@ function openForm(e){
   fillSelect($("eEstado"), config.estados, {value: e?.estado || config.estados[0]});
   fillSelect($("eAlmacen"), config.almacenes, {value: e?.almacen || config.almacenes[0]});
   $("eDesc").value = e?.desc||"";
+  setSenalForm(!!e?.senal, e?.senal ? (e.senalImporte ?? tarifas.senal) : tarifas.senal);
   $("formPanel").hidden = false; $("formPanel").scrollIntoView({behavior:"smooth",block:"start"}); $("eCliente").focus();
 }
 $("btnEditar").addEventListener("click", () => { const e=encargos.find(x=>x.id===selId); if(e) openForm(e); });
 $("formEncargo").addEventListener("submit", async ev => {
   ev.preventDefault();
-  const data = { ref:$("eRef").value.trim()||nextRef(), cliente:$("eCliente").value.trim(), tel:$("eTel").value.trim(), fecha:$("eFecha").value, bateria:$("eBateria").value.trim(), v:+$("eV").value||null, ah:+$("eAh").value||null, estado:$("eEstado").value, almacen:$("eAlmacen").value, desc:$("eDesc").value.trim(), updatedAt:Date.now() };
+  const data = { ref:$("eRef").value.trim()||nextRef(), cliente:$("eCliente").value.trim(), tel:$("eTel").value.trim(), fecha:$("eFecha").value, bateria:$("eBateria").value.trim(), v:+$("eV").value||null, ah:+$("eAh").value||null, estado:$("eEstado").value, almacen:$("eAlmacen").value, desc:$("eDesc").value.trim(), senal:$("eSenal").getAttribute("aria-pressed")==="true", senalImporte:+$("eSenalImporte").value||0, updatedAt:Date.now() };
+  if(!data.senal) data.senalImporte = null;
   $("formSubmit").disabled = true;
   try{
     const prev = editingId ? (encargos.find(e=>e.id===editingId)?.fotos||[]) : [];
@@ -976,6 +1014,7 @@ $("formEncargo").addEventListener("submit", async ev => {
       selId = id; if(demoMode()) selectEncargo(id);
       const e = encargos.find(x=>x.id===id); if(!e) encargos.push({id,...data});
       await addNota({tipo:"sistema", texto:`Encargo creado · ${data.estado} · ${data.almacen}`});
+      if(data.senal) await addNota({tipo:"sistema", texto:`Señal de diagnosis recibida · ${eur(data.senalImporte)}`});
       if(!demoMode()) selectEncargo(id);
     }
   }catch(err){ console.error(err); toast("No se pudo guardar: "+(err.message||err.code)); }
@@ -1410,7 +1449,7 @@ function renderTarifas(){
   $("tCeldas").innerHTML = tarifas.celdas.map((c,i)=>{ const coste = costes.celdas?.[c.id] ?? ""; const auto = pvpAuto(coste); const manual = c.pvpManual ? c.precio : "";
     return `<tr data-i="${i}" data-id="${esc(c.id)}"><td style="min-width:90px"><input type="text" data-k="marca" value="${esc(c.marca||"")}"></td><td style="min-width:100px"><input type="text" data-k="modelo" value="${esc(c.modelo)}"></td><td style="width:80px"><input type="text" data-k="formato" value="${esc(c.formato||"")}"></td><td style="width:96px"><input type="number" step="50" data-k="mah" value="${esc(c.mah??"")}"></td><td style="width:64px"><input type="text" data-k="descarga" value="${esc(c.descarga||"")}"></td><td style="width:100px"><input type="number" step="0.01" data-k="coste" value="${esc(coste)}"></td><td style="width:110px"><input type="number" step="0.01" data-k="pvp" value="${esc(manual)}" placeholder="${auto.toFixed(2)}" title="Automático: ${auto.toFixed(2)} €"></td><td class="act"><button class="iconbtn" data-del-celda="${i}" title="Quitar">✕</button></td></tr>`; }).join("") || `<tr><td colspan="8" class="muted">Sin celdas. Añade tus modelos.</td></tr>`;
   $("tBms").innerHTML = tarifas.bms.map((b,i)=>`<tr data-i="${i}" data-id="${esc(b.id)}"><td><input type="text" data-k="modelo" value="${esc(b.modelo)}"></td><td style="width:120px"><input type="text" data-k="serie" value="${esc(b.serie||"")}"></td><td style="width:84px">${i===0?"":`<input type="number" step="0.5" data-k="coste" value="${esc(costes.bms?.[b.id]??"")}">`}</td><td style="width:90px"><input type="number" step="0.5" data-k="precio" value="${esc(b.precio)}"${i===0?" disabled":""}></td><td class="act">${i===0?"":`<button class="iconbtn" data-del-bms="${i}" title="Quitar">✕</button>`}</td></tr>`).join("");
-  $("tHora").value = tarifas.hora; $("tHoraCoste").value = costes.hora ?? ""; $("tDiagCoste").value = costes.diagnosis ?? ""; $("tDiag").value = tarifas.diagnosis; $("tConsumibles").value = tarifas.consumibles ?? 5; $("tIva").value = tarifas.iva;
+  $("tHora").value = tarifas.hora; $("tHoraCoste").value = costes.hora ?? ""; $("tDiagCoste").value = costes.diagnosis ?? ""; $("tDiag").value = tarifas.diagnosis; $("tConsumibles").value = tarifas.consumibles ?? 5; $("tSenal").value = tarifas.senal ?? 30; $("tIva").value = tarifas.iva;
   $("tAlmacenes").value = config.almacenes.join("\n"); $("tEstados").value = config.estados.join("\n");
   const co = config.empresa||DEF_EMPRESA;
   $("tCoNombre").value=co.nombre||""; $("tCoRazon").value=co.razon||""; $("tCoNif").value=co.nif||""; $("tCoTel").value=co.tel||""; $("tCoDir").value=co.dir||""; $("tCoEmail").value=co.email||""; $("tCoWeb").value=co.web||""; $("tCoValidez").value=co.validez||15; $("tCoSerie").value=co.serie||""; $("tCoCond").value=co.cond||""; $("tCoBancos").value=co.bancos||""; $("tCoLegal").value=co.legal||"";
@@ -1427,7 +1466,7 @@ function readTarifasForm(){
   tarifas.bms = [...$("tBms").querySelectorAll("tr[data-i]")].map(tr=>{ const g=k=>{const el=tr.querySelector(`[data-k=${k}]`); return el?el.value:"";}; const id=tr.dataset.id||("b"+Math.random().toString(36).slice(2,7)); if(g("coste")!=="") nb[id]=+g("coste")||0; return {id, modelo:g("modelo").trim(), serie:g("serie").trim(), precio:+g("precio")||0}; }).filter(b=>b.modelo);
   if(!tarifas.bms.some(b=>b.id==="b0")) tarifas.bms.unshift({id:"b0",modelo:"Sin BMS",serie:"",precio:0});
   costes = {celdas:nc, bms:nb, hora:+$("tHoraCoste").value||0, diagnosis:+$("tDiagCoste").value||0};
-  tarifas.hora = +$("tHora").value||0; tarifas.diagnosis = +$("tDiag").value||0; tarifas.consumibles = +$("tConsumibles").value||0; tarifas.iva = +$("tIva").value||0;
+  tarifas.hora = +$("tHora").value||0; tarifas.diagnosis = +$("tDiag").value||0; tarifas.consumibles = +$("tConsumibles").value||0; tarifas.senal = +$("tSenal").value||0; tarifas.iva = +$("tIva").value||0;
   config.almacenes = $("tAlmacenes").value.split("\n").map(s=>s.trim()).filter(Boolean);
   config.estados = $("tEstados").value.split("\n").map(s=>s.trim()).filter(Boolean);
   if(!config.almacenes.length) config.almacenes = [...DEF_CONFIG.almacenes];
@@ -1620,7 +1659,7 @@ $("rCsv").addEventListener("click", async () => {
 function renderAll(){
   refreshSelects(); renderStrip(); renderLista(); renderListaPres(); renderCalc();
   if(isAdmin && $("view-rentabilidad").classList.contains("active")) renderRentNums();
-  if(selId && !$("detalleBody").hidden){ const e=encargos.find(x=>x.id===selId); if(e){ $("dTitulo").textContent=e.cliente; fillSelect($("dEstado"),config.estados,{value:e.estado}); fillSelect($("dAlmacen"),config.almacenes,{value:e.almacen}); } else { $("detalleBody").hidden=true; $("detalleEmpty").hidden=false; selId=null; } }
+  if(selId && !$("detalleBody").hidden){ const e=encargos.find(x=>x.id===selId); if(e){ $("dTitulo").textContent=e.cliente; renderSenalDetalle(e); fillSelect($("dEstado"),config.estados,{value:e.estado}); fillSelect($("dAlmacen"),config.almacenes,{value:e.almacen}); } else { $("detalleBody").hidden=true; $("detalleEmpty").hidden=false; selId=null; } }
 }
 
 // ---------- Boot ----------
@@ -1648,7 +1687,7 @@ function loadDemo(){
   $("statusLine").hidden=false; $("statusLine").textContent = "Modo demostración: los datos de ejemplo no se guardan. Abre el panel desde claude.ai para trabajar con datos compartidos.";
 }
 function subscribeAll(){
-  db.doc("config/tarifas").onSnapshot(s => { if(ex(s)){ const d=s.data(); tarifas = {celdas:d.celdas||[], bms:d.bms||[], hora:d.hora??DEF_TARIFAS.hora, diagnosis:d.diagnosis??DEF_TARIFAS.diagnosis, iva:d.iva??DEF_TARIFAS.iva, margen:d.margen??DEF_TARIFAS.margen, margenCustom:d.margenCustom??DEF_TARIFAS.margenCustom, consumibles:d.consumibles??DEF_TARIFAS.consumibles}; } renderAll(); if($("view-tarifas").classList.contains("active")) renderTarifas(); }, e=>console.warn(e));
+  db.doc("config/tarifas").onSnapshot(s => { if(ex(s)){ const d=s.data(); tarifas = {celdas:d.celdas||[], bms:d.bms||[], hora:d.hora??DEF_TARIFAS.hora, diagnosis:d.diagnosis??DEF_TARIFAS.diagnosis, iva:d.iva??DEF_TARIFAS.iva, margen:d.margen??DEF_TARIFAS.margen, margenCustom:d.margenCustom??DEF_TARIFAS.margenCustom, consumibles:d.consumibles??DEF_TARIFAS.consumibles, senal:d.senal??DEF_TARIFAS.senal}; } renderAll(); if($("view-tarifas").classList.contains("active")) renderTarifas(); }, e=>console.warn(e));
   if(isAdmin) db.doc("config/costes").onSnapshot(s => { costes = ex(s) ? {celdas:s.data().celdas||{}, bms:s.data().bms||{}, hora:s.data().hora||0, diagnosis:s.data().diagnosis||0} : {celdas:{},bms:{},hora:0,diagnosis:0}; renderCalc(); if($("view-tarifas").classList.contains("active")) renderTarifas(); }, e=>console.warn(e)); else costes = {celdas:{},bms:{},hora:0};
   if(isAdmin) db.doc("config/gastos").onSnapshot(s => { if(gastosDirty) return; gastos = ex(s) && Array.isArray(s.data().items) ? s.data().items : []; if($("view-rentabilidad").classList.contains("active")) renderRent(); }, e=>console.warn(e));
   db.doc("config/general").onSnapshot(s => { if(ex(s)){ const d=s.data(); config = {almacenes:d.almacenes?.length?d.almacenes:DEF_CONFIG.almacenes, estados:d.estados?.length?d.estados:DEF_CONFIG.estados, empresa:{...DEF_EMPRESA, ...(d.empresa||{})}}; } renderAll(); }, e=>console.warn(e));
