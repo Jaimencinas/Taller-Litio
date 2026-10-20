@@ -303,6 +303,11 @@ body[data-auth="out"] .top, body[data-auth="out"] main{visibility:hidden}
 .senal-btn{font-weight:600}
 .senal.ok .senal-btn{background:var(--ok);border-color:var(--ok);color:#fff}
 .senal .hint{flex-basis:100%}
+#qSenalInfo{grid-column:span 2;font-size:13px;padding:8px 12px}
+.qlines tfoot tr.pend td{font-family:var(--display);font-size:20px;font-weight:700;color:var(--ok);padding-top:4px}
+.qlines tfoot tr.senalrow td{color:var(--ok);font-weight:600}
+.doc2-totals .row.senal{color:#2E7D5B}
+.doc2-totals .row.pend{font-family:var(--display);font-size:18px;font-weight:700;color:#2E7D5B;border:0;padding-top:4px}
 .senal b.chk{color:var(--ok);font-weight:600}
 .chip.senal-chip{background:var(--ok-soft);color:var(--ok)}
 .chip.senal-no{background:var(--warn-soft);color:var(--warn)}
@@ -466,7 +471,8 @@ body[data-auth="out"] .top, body[data-auth="out"] main{visibility:hidden}
         <label class="f span2">Síntoma / descripción<textarea id="eDesc" placeholder="No carga, se apaga bajo carga, BMS bloqueado…"></textarea></label>
         <div class="span2 senal" id="eSenalBox">
           <button type="button" class="btn senal-btn" id="eSenal" aria-pressed="false">☐ Señal de diagnosis obligatoria</button>
-          <label class="f" style="width:110px">Importe (€)<input type="number" id="eSenalImporte" min="0" step="0.5"></label>
+          <label class="f" style="width:120px">Importe<select id="eSenalOpc"><option value="30">30 €</option><option value="50">50 €</option><option value="otro">Otro…</option></select></label>
+          <label class="f" id="eSenalOtroWrap" style="width:110px" hidden>Importe (€)<input type="number" id="eSenalImporte" min="0" step="0.5"></label>
           <span class="hint" id="eSenalHint">Pulsa el botón para confirmar que el cliente deja la señal.</span>
         </div>
         <div class="span2">
@@ -524,7 +530,10 @@ body[data-auth="out"] .top, body[data-auth="out"] main{visibility:hidden}
             <input type="hidden" id="qCeldaPrecio"><input type="hidden" id="qBmsPrecio">
             <label class="f">Horas de trabajo<input type="number" id="qHoras" min="0" step="0.25" value="0"></label>
             <label class="f">Diagnosis<select id="qDiag"><option value="1">Sí, con diagnosis</option><option value="0">No</option></select></label>
-            <label class="f span2">Precio cerrado sin IVA (€) <span class="muted">opcional: sustituye la suma de este producto</span><input type="number" id="qPrecioCerrado" min="0" step="0.01" placeholder="Dejar vacío para sumar conceptos"></label>
+            <label class="f admin-only">Coste de diagnosis (€) <span class="muted">lo que nos cuesta</span><input type="number" id="qCosteDiag" min="0" step="0.5" placeholder="20,00"></label>
+            <div class="senal admin-only" id="qSenalInfo" hidden style="align-items:center"></div>
+            <label class="f">Precio cerrado sin IVA (€) <span class="muted">opcional: sustituye la suma de este producto</span><input type="number" id="qPrecioCerrado" min="0" step="0.01" placeholder="Dejar vacío para sumar conceptos"></label>
+            <label class="f admin-only">Coste cerrado sin IVA (€) <span class="muted">opcional: sustituye la suma de costes</span><input type="number" id="qCosteCerrado" min="0" step="0.01" placeholder="Dejar vacío para sumar costes"></label>
             <label class="f span2">Otros conceptos (uno por línea: concepto ; importe)<textarea id="qExtras" placeholder="Soldadura de níquel ; 12&#10;Envoltura y aislante ; 8"></textarea></label>
             <label class="f span2">Texto de la línea para el cliente <span class="muted">(se rellena solo; puedes borrarlo y escribir el tuyo)</span><input type="text" id="qDescCliente" placeholder="Reacondicionamiento de batería …"></label>
             <label class="f span2">Trabajos realizados en la batería (sale en el presupuesto como "Trabajos realizados")<textarea id="qTrabajos" placeholder="Ej. Diagnosis completa del pack; sustitución de 10 celdas en los grupos 3 y 4; comprobación del BMS y balanceo; prueba de carga y descarga; sellado y termorretráctil nuevo."></textarea></label>
@@ -935,16 +944,18 @@ function setSenalForm(on, importe){
   const b = $("eSenal"); b.setAttribute("aria-pressed", String(on));
   b.textContent = on ? "✓ Señal de diagnosis recibida" : "☐ Señal de diagnosis obligatoria";
   $("eSenalBox").classList.toggle("ok", on);
-  if(importe!=null) $("eSenalImporte").value = importe;
+  if(importe!=null){ const v = +importe; const std = [30,50].includes(v); $("eSenalOpc").value = std ? String(v) : "otro"; $("eSenalImporte").value = v; $("eSenalOtroWrap").hidden = std; }
   $("eSenalHint").textContent = on ? "El cliente ha dejado la señal. Quedará guardado en el encargo y en el seguimiento." : "Pulsa el botón para confirmar que el cliente deja la señal.";
 }
 $("eSenal").addEventListener("click", () => setSenalForm($("eSenal").getAttribute("aria-pressed")!=="true"));
+$("eSenalOpc").addEventListener("change", () => { const o = $("eSenalOpc").value; $("eSenalOtroWrap").hidden = o!=="otro"; if(o!=="otro") $("eSenalImporte").value = o; else $("eSenalImporte").focus(); });
+const senalImporteForm = () => +$("eSenalImporte").value||0;
 function renderSenalDetalle(e){
   const box = $("dSenalBox"); $("btnRecibo").hidden = !e.senal;
   if(e.senal) box.innerHTML = `<b class="chk">✓ Señal de diagnosis recibida · ${eur(e.senalImporte??tarifas.senal)}</b>${readOnly?"":`<button class="btn sm" id="dSenalQuitar" style="margin-left:auto">Quitar señal</button>`}`;
-  else box.innerHTML = `<span class="chip senal-no">Sin señal de diagnosis</span>${readOnly?"":`<button class="btn sm primary" id="dSenalMarcar">✓ Marcar señal recibida (${eur(tarifas.senal)})</button>`}`;
+  else box.innerHTML = `<span class="chip senal-no">Sin señal de diagnosis</span>${readOnly?"":`<span style="margin-left:auto;display:inline-flex;gap:6px;flex-wrap:wrap"><button class="btn sm primary" data-senal="30">✓ Señal recibida 30 €</button><button class="btn sm primary" data-senal="50">✓ Señal recibida 50 €</button></span>`}`;
   box.classList.toggle("ok", !!e.senal);
-  const m = $("dSenalMarcar"); if(m) m.addEventListener("click", async () => { m.disabled=true; try{ await updateEncargo(e.id, {senal:true, senalImporte:+tarifas.senal||0}); await addNota({tipo:"sistema", texto:`Señal de diagnosis recibida · ${eur(tarifas.senal)}`}); toast("Señal registrada"); }catch(err){ toast("No se pudo guardar: "+(err.message||err.code)); m.disabled=false; } });
+  box.querySelectorAll("[data-senal]").forEach(m => m.addEventListener("click", async () => { const imp = +m.dataset.senal; box.querySelectorAll("button").forEach(b=>b.disabled=true); try{ await updateEncargo(e.id, {senal:true, senalImporte:imp}); await addNota({tipo:"sistema", texto:`Señal de diagnosis recibida · ${eur(imp)}`}); toast("Señal registrada"); }catch(err){ toast("No se pudo guardar: "+(err.message||err.code)); box.querySelectorAll("button").forEach(b=>b.disabled=false); } }));
   const q = $("dSenalQuitar"); if(q) q.addEventListener("click", async () => { q.disabled=true; try{ await updateEncargo(e.id, {senal:false, senalImporte:null}); await addNota({tipo:"sistema", texto:"Señal de diagnosis anulada"}); toast("Señal quitada"); }catch(err){ toast("No se pudo guardar: "+(err.message||err.code)); q.disabled=false; } });
 }
 
@@ -998,7 +1009,7 @@ function openForm(e){
 $("btnEditar").addEventListener("click", () => { const e=encargos.find(x=>x.id===selId); if(e) openForm(e); });
 $("formEncargo").addEventListener("submit", async ev => {
   ev.preventDefault();
-  const data = { ref:$("eRef").value.trim()||nextRef(), cliente:$("eCliente").value.trim(), tel:$("eTel").value.trim(), fecha:$("eFecha").value, bateria:$("eBateria").value.trim(), v:+$("eV").value||null, ah:+$("eAh").value||null, estado:$("eEstado").value, almacen:$("eAlmacen").value, desc:$("eDesc").value.trim(), senal:$("eSenal").getAttribute("aria-pressed")==="true", senalImporte:+$("eSenalImporte").value||0, updatedAt:Date.now() };
+  const data = { ref:$("eRef").value.trim()||nextRef(), cliente:$("eCliente").value.trim(), tel:$("eTel").value.trim(), fecha:$("eFecha").value, bateria:$("eBateria").value.trim(), v:+$("eV").value||null, ah:+$("eAh").value||null, estado:$("eEstado").value, almacen:$("eAlmacen").value, desc:$("eDesc").value.trim(), senal:$("eSenal").getAttribute("aria-pressed")==="true", senalImporte:senalImporteForm(), updatedAt:Date.now() };
   if(!data.senal) data.senalImporte = null;
   $("formSubmit").disabled = true;
   const fotosForm = data.senal && !editingId ? await Promise.all(fotoSlots.filter(s=>s.file).map(s=>fileToDataUrl(s.file))) : [];
@@ -1029,10 +1040,10 @@ $("formEncargo").addEventListener("submit", async ev => {
 // diagnosis, otros conceptos, precio cerrado y trabajos. Los presupuestos guardados antes de esta versión
 // (un solo producto en campos sueltos) se leen como un presupuesto de un producto, sin tocar sus datos.
 const letra = i => String.fromCharCode(65 + (i % 26)) + (i >= 26 ? Math.floor(i/26) : "");
-const blankProd = () => ({ bateria:"", celdaId:tarifas.celdas[0]?.id||null, celdaNombre:"", celdaPrecio:0, nCeldas:0, bmsId:tarifas.bms[0]?.id||null, nBms:1, bmsNombre:"", bmsPrecio:0, horas:0, diagnosis:true, extras:"", trabajos:"", descCliente:"", precioCerrado:null, interno:{costeCelda:null, costeBms:null} });
+const blankProd = () => ({ bateria:"", celdaId:tarifas.celdas[0]?.id||null, celdaNombre:"", celdaPrecio:0, nCeldas:0, bmsId:tarifas.bms[0]?.id||null, nBms:1, bmsNombre:"", bmsPrecio:0, horas:0, diagnosis:true, extras:"", trabajos:"", descCliente:"", precioCerrado:null, interno:{costeCelda:null, costeBms:null, costeDiag:null, costeCerrado:null} });
 function prodsOf(p){
   if(Array.isArray(p.productos) && p.productos.length) return p.productos;
-  return [{ bateria:p.bateria||"", celdaId:p.celdaId||null, celdaNombre:p.celdaNombre||"", celdaPrecio:+p.celdaPrecio||0, nCeldas:+p.nCeldas||0, bmsId:p.bmsId||null, nBms:p.nBms==null?1:+p.nBms, bmsNombre:p.bmsNombre||"", bmsPrecio:+p.bmsPrecio||0, horas:+p.horas||0, diagnosis:!!p.diagnosis, extras:p.extras||"", trabajos:p.trabajos||"", descCliente:p.descCliente||"", precioCerrado:p.precioCerrado??null, interno:{costeCelda:p.interno?.costeCelda??null, costeBms:p.interno?.costeBms??null} }];
+  return [{ bateria:p.bateria||"", celdaId:p.celdaId||null, celdaNombre:p.celdaNombre||"", celdaPrecio:+p.celdaPrecio||0, nCeldas:+p.nCeldas||0, bmsId:p.bmsId||null, nBms:p.nBms==null?1:+p.nBms, bmsNombre:p.bmsNombre||"", bmsPrecio:+p.bmsPrecio||0, horas:+p.horas||0, diagnosis:!!p.diagnosis, extras:p.extras||"", trabajos:p.trabajos||"", descCliente:p.descCliente||"", precioCerrado:p.precioCerrado??null, interno:{costeCelda:p.interno?.costeCelda??null, costeBms:p.interno?.costeBms??null, costeDiag:p.interno?.costeDiag??null, costeCerrado:p.interno?.costeCerrado??null} }];
 }
 const prodName = (p,i) => p.bateria || ("Producto "+letra(i));
 let prods = [blankProd()], curProd = 0;
@@ -1044,12 +1055,12 @@ function readProd(){
   return { bateria:$("qBateria").value.trim(), celdaId, celdaNombre:$("qCeldaNombre").value.trim(), celdaPrecio:+$("qCeldaPrecio").value||0, nCeldas:+$("qNCeldas").value||0,
     bmsId, nBms:+$("qNBms").value||0, bmsNombre:$("qBmsNombre").value.trim(), bmsPrecio:+$("qBmsPrecio").value||0, horas:+$("qHoras").value||0, diagnosis:$("qDiag").value==="1",
     extras:$("qExtras").value, trabajos:$("qTrabajos").value.trim(), descCliente:$("qDescCliente").value.trim(), precioCerrado:$("qPrecioCerrado").value==="" ? null : (+$("qPrecioCerrado").value||0),
-    interno:{ costeCelda: celdaId==="custom" && $("qCosteCelda").value!=="" ? +$("qCosteCelda").value : null, costeBms: bmsId==="custom" && $("qCosteBms").value!=="" ? +$("qCosteBms").value : null } };
+    interno:{ costeCelda: celdaId==="custom" && $("qCosteCelda").value!=="" ? +$("qCosteCelda").value : null, costeBms: bmsId==="custom" && $("qCosteBms").value!=="" ? +$("qCosteBms").value : null, costeDiag: $("qCosteDiag").value==="" ? null : (+$("qCosteDiag").value||0), costeCerrado: $("qCosteCerrado").value==="" ? null : (+$("qCosteCerrado").value||0) } };
 }
 function writeProd(p){
   $("qBateria").value=p.bateria||""; $("qCelda").value=p.celdaId||""; $("qNCeldas").value=p.nCeldas||0; $("qBms").value=p.bmsId||""; $("qHoras").value=p.horas||0; $("qDiag").value=p.diagnosis?"1":"0"; $("qExtras").value=p.extras||""; $("qTrabajos").value=p.trabajos||"";
   $("qPrecioCerrado").value=p.precioCerrado??""; $("qCeldaNombre").value=p.celdaNombre||""; $("qCeldaPrecio").value=p.celdaPrecio||""; $("qNBms").value=p.nBms??1; $("qBmsNombre").value=p.bmsNombre||""; $("qBmsPrecio").value=p.bmsPrecio||""; $("qDescCliente").value=p.descCliente||"";
-  $("qCosteCelda").value=p.interno?.costeCelda??""; $("qCosteBms").value=p.interno?.costeBms??"";
+  $("qCosteCelda").value=p.interno?.costeCelda??""; $("qCosteBms").value=p.interno?.costeBms??""; $("qCosteDiag").value=p.interno?.costeDiag??""; $("qCosteCerrado").value=p.interno?.costeCerrado??"";
   descTocado = !!p._desc;
 }
 function syncProd(){ prods[curProd] = {...readProd(), _desc:descTocado}; }
@@ -1084,9 +1095,11 @@ const Q = () => {
 };
 const GRADO = {A:"Grado A (nuevas)", B:"Grado B", R:"Recuperadas"};
 // Conceptos de un producto (q = producto)
-function calcProd(q){
+// Señal de diagnosis del encargo asociado (importe que ya pagó el cliente), o 0
+function senalDe(q){ const e = encargos.find(x=>x.id===q.encargoId); return e && e.senal ? (+e.senalImporte || +tarifas.senal || 0) : 0; }
+function calcProd(q, pDiag){
   const it = q.interno || {}; const L = [];
-  if(q.diagnosis) L.push({c:"Diagnosis de la batería (test de celdas, BMS y carga)", n:1, p:+tarifas.diagnosis||0, kind:"diagnosis", coste:+costes.diagnosis||0});
+  if(q.diagnosis) L.push({c:"Diagnosis de la batería (test de celdas, BMS y carga)", n:1, p: pDiag!=null ? pDiag : (+tarifas.diagnosis||0), kind:"diagnosis", coste: it.costeDiag!=null ? +it.costeDiag : (+costes.diagnosis||0)});
   const cel = q.celdaId==="custom" ? {id:"custom", marca:"", modelo:q.celdaNombre||"celda personalizada", formato:"", mah:null, precio:q.celdaPrecio||0} : tarifas.celdas.find(c=>c.id===q.celdaId);
   if(cel && q.nCeldas>0) L.push({c:`Sustitución de celdas · ${[cel.marca,cel.modelo].filter(Boolean).join(" ")}${cel.formato?` ${cel.formato}`:""}${cel.mah?` ${cel.mah}mAh`:""}`, n:q.nCeldas, p:+cel.precio||0, coste: it.costeCelda!=null ? +it.costeCelda : (+(costes.celdas?.[cel.id])||0), kind:"celdas"});
   const bms = q.bmsId==="custom" ? {id:"custom", modelo:q.bmsNombre||"BMS personalizado", serie:"", precio:q.bmsPrecio||0} : tarifas.bms.find(b=>b.id===q.bmsId);
@@ -1097,11 +1110,14 @@ function calcProd(q){
   String(q.extras||"").split("\n").map(s=>s.trim()).filter(Boolean).forEach(s => { const [c,imp] = s.split(";"); const p = parseFloat(String(imp||"").replace(",",".")); if(c && !isNaN(p)) L.push({c:c.trim(), n:1, p}); });
   const suma = L.reduce((a,l)=>a+l.n*l.p,0);
   const cerrado = q.precioCerrado!=null && q.precioCerrado>0;
-  return {L, suma, cerrado, base: cerrado ? +q.precioCerrado : suma, coste: L.reduce((a,l)=>a+l.n*(l.coste||0),0)};
+  const costeCerrado = it.costeCerrado!=null && it.costeCerrado!=="";
+  return {L, suma, cerrado, base: cerrado ? +q.precioCerrado : suma, coste: costeCerrado ? +it.costeCerrado : L.reduce((a,l)=>a+l.n*(l.coste||0),0), costeCerrado};
 }
 // Presupuesto completo (q = presupuesto con productos, o uno antiguo de un solo producto)
 function calcLineas(q){
-  const ps = prodsOf(q); const multi = ps.length>1; const parts = ps.map(calcProd);
+  const ps = prodsOf(q); const multi = ps.length>1;
+  const senal = senalDe(q); let senalUsada = false;
+  const parts = ps.map(p => { const useSenal = senal>0 && p.diagnosis && !senalUsada; if(useSenal) senalUsada = true; return calcProd(p, useSenal ? senal : null); });
   const L = parts.flatMap((r,i) => r.L.map(l => multi ? {...l, prod:i} : l));
   const suma = parts.reduce((a,r)=>a+r.suma,0);
   const cerrado = parts.some(r=>r.cerrado);
@@ -1112,9 +1128,10 @@ function calcLineas(q){
   const costeTotal = parts.reduce((a,r)=>a+r.coste,0);
   const beneficio = baseNeta - costeTotal;
   const margen = baseNeta>0 ? beneficio/baseNeta*100 : 0;
-  return {lineas:L.map(l=>{ const {coste, ...pub} = l; return {...pub, importe:l.n*l.p}; }), base, suma, cerrado, dtoImp, baseNeta, iva, total:baseNeta+iva,
-    prods: parts.map(r=>({base:r.base, suma:r.suma, cerrado:r.cerrado, coste:r.coste})),
-    analitica:{ coste:costeTotal, beneficio, margen, desglose:L.filter(l=>l.coste).map(l=>({c:l.c, kind:l.kind, prod:l.prod, n:l.n, coste:l.coste, total:l.n*l.coste})) }};
+  const total = baseNeta+iva; const senalPagada = Math.min(senal, total);
+  return {lineas:L.map(l=>{ const {coste, ...pub} = l; return {...pub, importe:l.n*l.p}; }), base, suma, cerrado, dtoImp, baseNeta, iva, total, senalPagada, pendiente: total-senalPagada,
+    prods: parts.map(r=>({base:r.base, suma:r.suma, cerrado:r.cerrado, coste:r.coste, costeCerrado:r.costeCerrado})),
+    analitica:{ coste:costeTotal, beneficio, margen, desglose:parts.flatMap((r,i)=> r.costeCerrado ? [{c:"Coste cerrado", kind:"cerrado", prod:multi?i:undefined, n:1, coste:r.coste, total:r.coste}] : r.L.filter(l=>l.coste).map(l=>({c:l.c, kind:l.kind, prod:multi?i:undefined, n:l.n, coste:l.coste, total:l.n*l.coste}))) }};
 }
 // Lo que se guarda: el presupuesto con sus productos. Los campos del primer producto se guardan también sueltos,
 // igual que en los presupuestos de un solo producto, para que los datos sigan siendo legibles como hasta ahora.
@@ -1123,7 +1140,7 @@ function presPayload(q, r){
   const p0 = ps[0];
   return {...q, productos:ps, bateria:ps.map(x=>x.bateria).filter(Boolean).join(" + "),
     celdaId:p0.celdaId, celdaNombre:p0.celdaNombre, celdaPrecio:p0.celdaPrecio, nCeldas:p0.nCeldas, bmsId:p0.bmsId, nBms:p0.nBms, bmsNombre:p0.bmsNombre, bmsPrecio:p0.bmsPrecio, horas:p0.horas, diagnosis:p0.diagnosis, extras:p0.extras, trabajos:p0.trabajos, descCliente:p0.descCliente, precioCerrado:p0.precioCerrado,
-    lineas:r.lineas, base:r.base, dtoImp:r.dtoImp, iva:r.iva, ivaPct:+tarifas.iva||0, total:r.total};
+    lineas:r.lineas, base:r.base, dtoImp:r.dtoImp, iva:r.iva, ivaPct:+tarifas.iva||0, total:r.total, senalPagada:r.senalPagada||0, pendiente:r.pendiente};
 }
 function renderCalc(){
   const mC = (+tarifas.margenCustom||0)/100; const pvpC = c => Math.round((+c||0)*(1+mC)*100)/100;
@@ -1144,11 +1161,15 @@ function renderCalc(){
     ${r.cerrado && !multi?`<tr><td colspan="3" class="r muted">Suma de conceptos (orientativa)</td><td class="r num muted" style="text-decoration:line-through">${eur(r.suma)}</td></tr><tr><td colspan="3" class="r" style="font-weight:600">Precio cerrado (base imponible)</td><td class="r num" style="font-weight:600">${eur(r.base)}</td></tr>`:`<tr><td colspan="3" class="r muted">Base imponible${multi?` · ${q.productos.length} productos`:""}</td><td class="r num">${eur(r.base)}</td></tr>`}
     ${q.dto?`<tr><td colspan="3" class="r muted">Descuento ${q.dto}%</td><td class="r num">−${eur(r.dtoImp)}</td></tr>`:""}
     <tr><td colspan="3" class="r muted">IVA ${tarifas.iva}%</td><td class="r num">${eur(r.iva)}</td></tr>
-    <tr class="total"><td colspan="3" class="r">Total</td><td class="r num">${eur(r.total)}</td></tr>`;
+    <tr class="total"><td colspan="3" class="r">Total</td><td class="r num">${eur(r.total)}</td></tr>
+    ${r.senalPagada>0?`<tr class="senalrow"><td colspan="3" class="r">Señal de diagnosis ya abonada por el cliente</td><td class="r num">−${eur(r.senalPagada)}</td></tr><tr class="pend"><td colspan="3" class="r">Total pendiente de pago</td><td class="r num">${eur(r.pendiente)}</td></tr>`:""}`;
+  const si = $("qSenalInfo"); const encS = encargos.find(x=>x.id===q.encargoId);
+  if(r.senalPagada>0 && encS){ si.hidden = false; si.classList.add("ok"); si.innerHTML = `<b class="chk">✓ El cliente ya pagó ${eur(r.senalPagada)} de señal</b><span class="muted">${encS.ref} · se descuentan del total del presupuesto${cur.diagnosis?"; la diagnosis se factura por ese mismo importe":""}</span>`; }
+  else { si.hidden = true; }
   const pb = $("profitBox");
   if(isAdmin && r.lineas.length){
     const a = r.analitica; const cls = a.beneficio<0?"neg":a.beneficio>0?"pos":"";
-    const ud = d => d.kind==="celdas"?"celda":d.kind==="bms"?"BMS":d.kind==="diagnosis"?"diagnosis":"h";
+    const ud = d => d.kind==="celdas"?"celda":d.kind==="bms"?"BMS":d.kind==="diagnosis"?"diagnosis":d.kind==="cerrado"?"coste cerrado":"h";
     pb.hidden = false;
     pb.innerHTML = `<div><div class="k">Coste real</div><div class="v num">${eur(a.coste)}</div><div class="d">${a.desglose.map(d=>`${multi?letra(d.prod)+": ":""}${d.n}× ${eur(d.coste)} ${ud(d)}`).join(" · ")||"sin coste imputado"}</div></div>
       <div><div class="k">Base neta</div><div class="v num">${eur(r.baseNeta)}</div><div class="d">sin IVA${q.dto?`, tras ${q.dto}% dto`:""}</div></div>
@@ -1157,7 +1178,7 @@ function renderCalc(){
   } else pb.hidden = true;
   return {q,r};
 }
-["qTrabajos","qCeldaNombre","qCeldaPrecio","qNBms","qBmsNombre","qBmsPrecio","qModo","qDescCliente","qPrecioCerrado","qCosteCelda","qCosteBms","qEncargo","qCliente","qNif","qDir","qEmail","qBateria","qCelda","qNCeldas","qBms","qHoras","qDiag","qDto","qExtras","qNotas"].forEach(id => $(id).addEventListener("input", renderCalc));
+["qCosteDiag","qCosteCerrado","qTrabajos","qCeldaNombre","qCeldaPrecio","qNBms","qBmsNombre","qBmsPrecio","qModo","qDescCliente","qPrecioCerrado","qCosteCelda","qCosteBms","qEncargo","qCliente","qNif","qDir","qEmail","qBateria","qCelda","qNCeldas","qBms","qHoras","qDiag","qDto","qExtras","qNotas"].forEach(id => $(id).addEventListener("input", renderCalc));
 $("qEncargo").addEventListener("change", () => { const e=encargos.find(x=>x.id===$("qEncargo").value); if(e){ $("qCliente").value=e.cliente; const bat=[e.bateria,e.v?e.v+"V":"",e.ah?e.ah+"Ah":""].filter(Boolean).join(" "); if(curProd===0) $("qBateria").value=bat; else prods[0].bateria=bat; } renderCalc(); });
 
 function nextNumPres(){
@@ -1186,7 +1207,7 @@ function openPres(id){
   curPresId = id; $("qTitle").textContent = p.num;
   $("qEncargo").value = p.encargoId||""; $("qCliente").value=p.cliente||""; $("qNif").value=p.nif||""; $("qDir").value=p.dir||""; $("qEmail").value=p.email||"";
   $("qDto").value=p.dto||0; $("qNotas").value=p.notas||""; $("hNumFactura").value=p.numFactura||""; $("qModo").value=p.modo||"linea";
-  prods = prodsOf(p).map((x,i) => { const {base, ...rest} = structuredClone(x); return {...blankProd(), ...rest, interno:{costeCelda:x.interno?.costeCelda??null, costeBms:x.interno?.costeBms??null}, _desc: !!(x.descCliente && x.descCliente!==descAutoProd(x, p.encargoId, i))}; });
+  prods = prodsOf(p).map((x,i) => { const {base, ...rest} = structuredClone(x); return {...blankProd(), ...rest, interno:{costeCelda:x.interno?.costeCelda??null, costeBms:x.interno?.costeBms??null, costeDiag:x.interno?.costeDiag??null, costeCerrado:x.interno?.costeCerrado??null}, _desc: !!(x.descCliente && x.descCliente!==descAutoProd(x, p.encargoId, i))}; });
   curProd = 0; writeProd(prods[0]);
   setPresEstado(p.estado||"borrador");
   $("qDelWrap").innerHTML = readOnly? "" : `<button class="btn sm danger" id="qDel">Eliminar</button>`;
@@ -1214,7 +1235,7 @@ async function savePres(estado){
       if(e && mapa[estado] && config.estados.includes(mapa[estado])){
         const prev = selId; selId = e.id;
         await updateEncargo(e.id, {estado:mapa[estado]});
-        await addNota({tipo:"sistema", texto:`Presupuesto ${p.num||""} ${estado} · ${eur(p.total)}`});
+        await addNota({tipo:"sistema", texto:`Presupuesto ${p.num||presupuestos.find(x=>x.id===curPresId)?.num||""} ${estado} · ${eur(p.total)}${p.senalPagada>0?` · señal abonada −${eur(p.senalPagada)} · pendiente ${eur(p.pendiente)}`:""}`});
         selId = prev;
       }
     }
@@ -1309,6 +1330,7 @@ function renderDocHtml(){
         <div class="row base"><span>BASE</span><span class="val">${n2(p.baseNeta??(p.base-p.dtoImp))} €</span></div>
         <div class="row"><span>${n2(p.base-p.dtoImp)}</span><span>IVA ${n2(p.ivaPct)}%</span><span class="val">${n2(p.iva)}</span></div>
         <div class="row total"><span>TOTAL</span><span class="val">${n2(p.total)} €</span></div>
+        ${p.senalPagada>0?`<div class="row senal"><span>Señal de diagnosis abonada</span><span class="val">−${n2(p.senalPagada)} €</span></div><div class="row pend"><span>PENDIENTE DE PAGO</span><span class="val">${n2(p.pendiente)} €</span></div>`:""}
       </div>
     </div>
     ${d.bancos.length?`<div class="doc2-bank"><b>Cuentas bancarias para abonar:</b>\n${d.bancos.map(b=>`${esc(b[0])}${b[2]?"  ·  Swift: "+esc(b[2]):""}${b[1]?"  ·  IBAN: "+esc(b[1]):""}`).join("\n")}</div>`:""}
@@ -1373,7 +1395,7 @@ function buildPdf(){
   const bankLines = d.bancos.length ? 1 + d.bancos.length : 0;
   const footH = 14 + (bankLines? bankLines*4+8 : 0);
   if(y + 10 + 42 + footH > H){ doc.addPage(); y = 14; } // con varios productos el contenido puede no caber: firma y totales pasan a otra hoja
-  let yb = H - footH - 48; if(yb < y+10) yb = y+10;
+  let yb = H - footH - (p.senalPagada>0 ? 64 : 48); if(yb < y+10) yb = y+10;
   doc.setFont("helvetica","bold"); doc.setFontSize(9); doc.setTextColor(...INK); doc.text("Firmado:", M+2, yb);
   doc.setDrawColor(185,189,180); doc.setLineWidth(.3); doc.rect(M, yb+2, 62, 38);
   doc.setFontSize(8.5); doc.text("Nombre:", M+2, yb+31); doc.text("NIF:", M+2, yb+36);
@@ -1383,6 +1405,8 @@ function buildPdf(){
   doc.setFont("helvetica","normal"); doc.setFontSize(9); doc.setTextColor(...INK); doc.text(n2(p.base-p.dtoImp), tx, ty); doc.text("IVA "+n2(p.ivaPct)+"%", tx+tw/2, ty, {align:"center"}); doc.text(n2(p.iva), W-M, ty, {align:"right"});
   doc.setLineWidth(.3); doc.line(tx, ty+2, W-M, ty+2); ty += 9;
   doc.setFont("helvetica","bold"); doc.setFontSize(13); doc.setTextColor(...ACC); doc.text("TOTAL", tx, ty); doc.setTextColor(...INK); doc.text(money(p.total), W-M, ty, {align:"right"});
+  if(p.senalPagada>0){ const OK=[46,125,91]; ty += 7; doc.setFont("helvetica","normal"); doc.setFontSize(9); doc.setTextColor(...OK); doc.text("Señal de diagnosis abonada", tx, ty); doc.text("−"+money(p.senalPagada), W-M, ty, {align:"right"});
+    doc.setDrawColor(...RULE); doc.setLineWidth(.3); doc.line(tx, ty+2, W-M, ty+2); ty += 8; doc.setFont("helvetica","bold"); doc.setFontSize(12); doc.text("PENDIENTE DE PAGO", tx, ty); doc.text(money(p.pendiente), W-M, ty, {align:"right"}); }
   // Bancos
   let yf = H - footH;
   if(bankLines){ doc.setDrawColor(185,189,180); doc.rect(M, yf, W-2*M, bankLines*4+5); doc.setFont("helvetica","normal"); doc.setFontSize(7.5); doc.setTextColor(...INK); doc.text("Cuentas bancarias para abonar:", M+2, yf+4);
@@ -1485,7 +1509,7 @@ function holdedDoc(){
   return {
     docType:"invoice", numSerie: co.serie||"", date: new Date().toISOString().slice(0,10),
     contact:{ name: p.cliente || e?.cliente || "", code: p.nif||"", address: p.dir||"", email: p.email||"", phone: e?.tel || "" },
-    notes: [`Presupuesto ${p.num}`, e?`Encargo ${e.ref} · ${e.bateria}`:"", p.notas||""].filter(Boolean).join(" · "),
+    notes: [`Presupuesto ${p.num}`, e?`Encargo ${e.ref} · ${e.bateria}`:"", p.senalPagada>0?`Señal de diagnosis abonada a cuenta: ${n2(p.senalPagada)} € (pendiente ${n2(p.pendiente)} €)`:"", p.notas||""].filter(Boolean).join(" · "),
     items: clientLines(p).map(l=>({sku:l.ref, name:l.nombre, units:l.uds, subtotal:+(+l.precio).toFixed(2), tax:p.ivaPct, discount:l.dto||0})),
     total: +p.total.toFixed(2),
   };

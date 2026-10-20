@@ -36,7 +36,8 @@ function notaFields(encargoId, n) {
 function presToDoc(r, admin) {
   const f = r.fields; const d = parseJSON(f["Datos"], {});
   const interno = (parseJSON(f["Interno"], {}).interno) || {};
-  const doc = { ...d, interno: { costeCelda: interno.costeCelda ?? null, costeBms: interno.costeBms ?? null }, id: f["ID"], num: f["Número"] || d.num, encargoId: f["Encargo"] || d.encargoId || null, cliente: f["Cliente"] || d.cliente || "", nif: f["NIF"] || "", dir: f["Dirección"] || "", email: f["Email"] || "", bateria: f["Batería"] || "", estado: f["Estado"] || "borrador", base: num(f["Base"]) ?? d.base, iva: num(f["IVA"]) ?? d.iva, total: num(f["Total"]) ?? d.total, numFactura: f["Nº factura"] || null };
+  if (!admin && Array.isArray(d.productos)) d.productos = d.productos.map((p) => { const { interno: _i, ...rest } = p || {}; return rest; });
+  const doc = { ...d, interno: admin ? { costeCelda: interno.costeCelda ?? null, costeBms: interno.costeBms ?? null, costeDiag: interno.costeDiag ?? null, costeCerrado: interno.costeCerrado ?? null } : {}, id: f["ID"], num: f["Número"] || d.num, encargoId: f["Encargo"] || d.encargoId || null, cliente: f["Cliente"] || d.cliente || "", nif: f["NIF"] || "", dir: f["Dirección"] || "", email: f["Email"] || "", bateria: f["Batería"] || "", estado: f["Estado"] || "borrador", base: num(f["Base"]) ?? d.base, iva: num(f["IVA"]) ?? d.iva, total: num(f["Total"]) ?? d.total, numFactura: f["Nº factura"] || null };
   return doc;
 }
 function presFields(d) {
@@ -139,7 +140,10 @@ function calcAnalitica(doc, costes, interno) {
     if (nCeldas > 0 && p.celdaId) desglose.push({ c: "Celdas", n: nCeldas, coste: cCelda, total: nCeldas * cCelda, ...tag });
     if (nBms > 0 && p.bmsId && p.bmsId !== "b0" && (bmsPrecio == null || bmsPrecio > 0)) desglose.push({ c: "BMS", n: nBms, coste: cBms, total: nBms * cBms, ...tag });
     if (horas > 0) desglose.push({ c: "Horas", n: horas, coste: cHora, total: horas * cHora, ...tag });
-    if (p.diagnosis && (+costes.diagnosis || 0) > 0) desglose.push({ c: "Diagnosis", n: 1, coste: +costes.diagnosis, total: +costes.diagnosis, ...tag });
+    const cDiag = it.costeDiag != null && it.costeDiag !== "" ? +it.costeDiag : (+costes.diagnosis || 0);
+    if (p.diagnosis && cDiag > 0) desglose.push({ c: "Diagnosis", n: 1, coste: cDiag, total: cDiag, ...tag });
+    // Coste cerrado del producto: sustituye la suma de costes de ese producto
+    if (it.costeCerrado != null && it.costeCerrado !== "" && !isNaN(+it.costeCerrado)) { for (let k = desglose.length - 1; k >= 0; k--) if ((desglose[k].prod ?? 0) === i) desglose.splice(k, 1); desglose.push({ c: "Coste cerrado", n: 1, coste: +it.costeCerrado, total: +it.costeCerrado, ...tag }); }
   });
   const coste = desglose.reduce((a, d) => a + d.total, 0);
   const baseNeta = (+doc.base || 0) - (+doc.dtoImp || 0);
@@ -151,14 +155,20 @@ async function writePres(id, doc, admin) {
   const rec = await findByField(T.pres, "ID", id);
   const prevInterno = rec ? (parseJSON(rec.fields["Interno"], {}).interno || {}) : {};
   const sent = doc.interno && typeof doc.interno === "object" ? doc.interno : null;
-  const interno = sent ? { costeCelda: sent.costeCelda == null || sent.costeCelda === "" ? null : +sent.costeCelda, costeBms: sent.costeBms == null || sent.costeBms === "" ? null : +sent.costeBms } : prevInterno;
+  const nz = (v) => (v == null || v === "" || isNaN(+v) ? null : +v);
+  const interno = sent && admin ? { costeCelda: nz(sent.costeCelda), costeBms: nz(sent.costeBms), costeDiag: nz(sent.costeDiag), costeCerrado: nz(sent.costeCerrado) } : prevInterno;
   // Fecha de aprobación (para la rentabilidad por fechas): se fija al aprobar y se conserva al facturar.
   doc = { ...doc };
   if (esAprobado(doc.estado)) {
     if (!doc.aprobadoAt) { const prev = rec ? presToDoc(rec, true) : null; doc.aprobadoAt = prev && esAprobado(prev.estado) ? (prev.updatedAt || prev.createdAt || Date.now()) : Date.now(); }
   } else delete doc.aprobadoAt;
+  // Un empleado nunca envía costes internos: se conservan los que puso el administrador (por producto y generales)
+  if (!admin) {
+    const prevProds = rec ? (parseJSON(rec.fields["Datos"], {}).productos || []) : [];
+    if (Array.isArray(doc.productos)) doc.productos = doc.productos.map((p, i) => ({ ...p, interno: (prevProds[i] && prevProds[i].interno) || {} }));
+  } else if (Array.isArray(doc.productos)) doc.productos = doc.productos.map((p) => ({ ...p, interno: { costeCelda: nz(p.interno && p.interno.costeCelda), costeBms: nz(p.interno && p.interno.costeBms), costeDiag: nz(p.interno && p.interno.costeDiag), costeCerrado: nz(p.interno && p.interno.costeCerrado) } }));
   const costes = await loadCostes();
-  const an = calcAnalitica({ ...doc, id }, costes, interno);
+  const an = calcAnalitica({ ...doc, id }, costes, admin ? interno : prevInterno);
   const fields = { ...presFields({ ...doc, id }), ...analFields(an) };
   const r = rec ? await updateRec(T.pres, rec.id, fields) : await createRec(T.pres, fields);
   return { doc: presToDoc(r, admin), analitica: admin ? analToDoc(r) : undefined };
