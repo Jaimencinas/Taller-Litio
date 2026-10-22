@@ -328,6 +328,15 @@ body[data-auth="out"] .top, body[data-auth="out"] main{visibility:hidden}
 .qlines tr.sub td{color:var(--ink-2);font-size:12px;border-bottom:1px solid var(--line-strong)}
 .btn.dl{border-color:var(--accent);color:var(--accent)}
 
+/* Conversión de presupuestos */
+.conv{padding:10px 14px;margin:-8px 0 18px}
+.conv-h{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin-bottom:6px}
+.conv-bar{display:flex;height:12px;border-radius:999px;overflow:hidden;background:var(--surface-2);gap:2px}
+.conv-bar span{display:block;height:100%}
+.conv-bar .ok{background:var(--ok)}.conv-bar .crit{background:var(--crit)}.conv-bar .pend{background:var(--warn)}
+.conv-k{display:flex;gap:18px;flex-wrap:wrap;margin-top:6px;font-size:13px}
+.conv-k b{font-family:var(--display);font-size:20px;font-weight:700;margin-right:4px}
+.conv-k b.ok{color:var(--ok)}.conv-k b.crit{color:var(--crit)}
 /* Rentabilidad */
 :root{--s1:#2a78d6;--s2:#eb6834;--s3:#1baf7a}
 @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){--s1:#3987e5;--s2:#d95926;--s3:#199e70} }
@@ -374,7 +383,7 @@ body[data-auth="out"] .top, body[data-auth="out"] main{visibility:hidden}
 .gasto .fechas label{display:inline-flex;align-items:center;gap:6px}
 .gasto .fechas input{width:auto}
 @media (max-width:420px){.gasto{grid-template-columns:minmax(0,1fr) 76px 98px 22px}}
-#rTabla{min-width:860px}#rMeses{min-width:500px}
+#rTabla,#rTablaMat{min-width:860px}#rMeses{min-width:500px}
 .rtab .lnk{white-space:nowrap}
 @media (prefers-reduced-motion:no-preference){.row,.btn{transition:background .12s}}
 </style>
@@ -398,6 +407,7 @@ body[data-auth="out"] .top, body[data-auth="out"] main{visibility:hidden}
 <!-- ============ ENCARGOS ============ -->
 <section class="view active" id="view-encargos">
   <div class="strip" id="strip"></div>
+  <div class="panel admin-only conv" id="conv"></div>
   <div class="cols">
     <div class="panel">
       <div class="panel-h">
@@ -608,7 +618,7 @@ body[data-auth="out"] .top, body[data-auth="out"] main{visibility:hidden}
       <div class="panel-h"><h2>Gastos fijos y otros gastos</h2><div class="toolbar"><button class="btn sm" id="rAddGasto">+ Añadir gasto</button></div></div>
       <div class="panel-b">
         <div class="gastos" id="rGastos"></div>
-        <div class="hint" style="margin-top:8px">Importes sin IVA. <b>Mensual</b> y <b>anual</b> (se reparte en 12) se imputan por mes natural completo entre «Desde» y «Hasta» (vacío = siempre). <b>Puntual</b> cuenta una sola vez en su fecha.</div>
+        <div class="hint" style="margin-top:8px">Importes sin IVA. <b>Mensual</b> y <b>anual</b> (se reparte en 12) se reparten entre los días laborables del mes (22, cambiable en Tarifas) y se imputan por los días laborables que entran en el periodo, entre «Desde» y «Hasta» (vacío = siempre). <b>Puntual</b> cuenta una sola vez en su fecha.</div>
         <div style="display:flex;gap:10px;align-items:center;justify-content:flex-end;margin-top:10px"><span class="saved" id="rSaved"></span><button class="btn primary" id="rGuardarGastos">Guardar gastos</button></div>
         <div class="profit" id="rEquilibrio" style="grid-template-columns:1fr"></div>
       </div>
@@ -618,6 +628,11 @@ body[data-auth="out"] .top, body[data-auth="out"] main{visibility:hidden}
     <div class="panel-h"><h2>Presupuestos aprobados</h2><div class="toolbar"><span class="hint" id="rCount"></span><button class="btn sm" id="rCsv">⬇ Exportar CSV</button></div></div>
     <div class="tblwrap"><table class="tar rtab" id="rTabla"></table></div>
     <div class="panel-b hint" style="border-top:1px solid var(--line)">Ingreso = base del presupuesto sin IVA y tras descuento. Coste = celdas, BMS, horas y diagnosis a tus costes internos, calculado al guardar cada presupuesto. La fecha es la de aprobación.</div>
+  </div>
+  <div class="panel" style="margin-top:16px">
+    <div class="panel-h"><h2>Presupuestos aprobados · solo materiales</h2><div class="toolbar"><span class="hint" id="rCountMat"></span></div></div>
+    <div class="tblwrap"><table class="tar rtab" id="rTablaMat"></table></div>
+    <div class="panel-b hint" style="border-top:1px solid var(--line)">Aquí el coste solo incluye celdas, BMS y otros materiales: las horas de tu personal y la diagnosis no se restan porque ya van en los gastos fijos. Horas y diagnosis se muestran solo como dato.</div>
   </div>
 </section>
 
@@ -649,6 +664,7 @@ body[data-auth="out"] .top, body[data-auth="out"] main{visibility:hidden}
           <label class="f admin-only">Coste interno diagnosis (€)<input type="number" id="tDiagCoste" step="0.5" min="0"></label>
           <label class="f">Consumibles varios (€, en cada presupuesto)<input type="number" id="tConsumibles" step="0.5" min="0"></label>
           <label class="f">Señal de diagnosis (€, al dejar la batería)<input type="number" id="tSenal" step="0.5" min="0"></label>
+          <label class="f admin-only">Días laborables al mes (reparto de gastos fijos)<input type="number" id="tDiasLab" step="1" min="1" max="31"></label>
           <label class="f">IVA (%)<input type="number" id="tIva" step="1"></label>
         </div>
       </div>
@@ -709,6 +725,7 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt
 const eur = n => (Number(n)||0).toLocaleString("es-ES",{style:"currency",currency:"EUR"});
 const fmtDate = ts => { const d = new Date(ts); return d.toLocaleDateString("es-ES",{day:"2-digit",month:"short"}) + " " + d.toLocaleTimeString("es-ES",{hour:"2-digit",minute:"2-digit"}); };
 const ago = ts => { const d=(Date.now()-ts)/864e5; if(d<1) return "hoy"; if(d<2) return "ayer"; return Math.floor(d)+" d"; };
+const pct = n => (isFinite(n) ? n.toFixed(1).replace(".",",") : "0,0") + " %";
 const slug = s => String(s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^a-z0-9]+/g,"");
 const chipClass = est => { const s=slug(est); for(const k of ["recibido","diagnosis","presupuestado","esperando","aprobado","reparacion","pruebas","listo","entregado","facturado","rechazado","incidencia","borrador","enviado"]) if(s.includes(k)) return k; return ""; };
 let toastT; const toast = m => { let t=document.querySelector(".toast"); if(!t){t=document.createElement("div");t.className="toast";document.body.appendChild(t);} t.textContent=m; clearTimeout(toastT); toastT=setTimeout(()=>t.remove(),2600); };
@@ -727,7 +744,7 @@ const DEF_TARIFAS = {
     {id:"b1", modelo:"BMS 10S 36V 25A", serie:"10S · 25A", precio:24, ejemplo:true},
     {id:"b2", modelo:"BMS 13S 48V 30A", serie:"13S · 30A", precio:32, ejemplo:true},
   ],
-  hora: 38, diagnosis: 25, iva: 21, margen: 20, margenCustom: 40, consumibles: 5, senal: 30,
+  hora: 38, diagnosis: 25, iva: 21, margen: 20, margenCustom: 40, consumibles: 5, senal: 30, diasLab: 22,
 };
 const DEF_COSTES = { celdas: {"c01": 1.47, "c02": 1.51, "c03": 1.47, "c04": 2.39, "c05": 2.44, "c06": 2.0, "c07": 2.17, "c08": 1.65, "c09": 1.12, "c10": 1.21, "c11": 1.34, "c12": 2.61, "c13": 1.73, "c14": 0.94, "c15": 0.99, "c16": 1.12, "c17": 1.31, "c18": 2.53}, bms: {b1:18, b2:24}, hora: 20 };
 
@@ -783,17 +800,25 @@ function refreshSelects(){
 function renderStrip(){
   const abiertos = encargos.filter(e => !["Entregado","Rechazado"].includes(e.estado));
   const porAlm = {}; abiertos.forEach(e => porAlm[e.almacen||"—"] = (porAlm[e.almacen||"—"]||0)+1);
-  const esperando = encargos.filter(e => /esperando|presupuestado/i.test(e.estado)).length;
   const listos = encargos.filter(e => e.estado==="Listo").length;
-  const aprobados = presupuestos.filter(p=>p.estado==="aprobado").length;
+  const nP = est => presupuestos.filter(p=>est.includes(p.estado)).length;
+  const pendientes = nP(["enviado"]), aprobados = nP(["aprobado","facturado"]), rechazados = nP(["rechazado"]), facturados = nP(["facturado"]);
   const tiles = [
     {k:"Encargos abiertos", v:abiertos.length, sub:`${encargos.length} en total`},
-    {k:"Pendientes de aprobación", v:esperando, sub:"presupuesto enviado"},
+    {k:"Pendientes de aprobar", v:pendientes, sub:"presupuesto enviado, sin respuesta"},
+    {k:"Presupuestos aprobados", v:aprobados, sub:`${facturados} facturado${facturados===1?"":"s"}`},
+    {k:"Presupuestos rechazados", v:rechazados, sub:"por el cliente"},
     {k:"Listos para entregar", v:listos, sub:"reparación terminada"},
-    {k:"Presup. aprobados sin facturar", v:aprobados, sub:"exportar a Holded"},
     ...Object.entries(porAlm).map(([a,n])=>({k:a, v:n, sub:"en este almacén"})),
   ];
   $("strip").innerHTML = tiles.map(t=>`<div class="tile"><div class="eyebrow">${esc(t.k)}</div><div class="v num">${t.v}</div><div class="sub">${esc(t.sub)}</div></div>`).join("");
+  // Conversión de presupuestos (solo administrador): lanzados = enviados, aprobados, facturados y rechazados
+  const lanzados = pendientes + aprobados + rechazados;
+  const pA = lanzados ? aprobados/lanzados*100 : 0, pR = lanzados ? rechazados/lanzados*100 : 0, pP = lanzados ? pendientes/lanzados*100 : 0;
+  $("conv").innerHTML = lanzados ? `<div class="conv-h"><div class="eyebrow">Conversión de presupuestos</div><span class="hint">${lanzados} lanzado${lanzados===1?"":"s"} hasta hoy</span></div>
+    <div class="conv-bar" role="img" aria-label="${pct(pA)} aceptados, ${pct(pR)} rechazados, ${pct(pP)} pendientes"><span class="ok" style="width:${pA}%"></span><span class="crit" style="width:${pR}%"></span><span class="pend" style="width:${pP}%"></span></div>
+    <div class="conv-k"><div><b class="ok">${pct(pA)}</b> aceptados <span class="muted">(${aprobados})</span></div><div><b class="crit">${pct(pR)}</b> rechazados <span class="muted">(${rechazados})</span></div><div><b>${pct(pP)}</b> pendientes <span class="muted">(${pendientes})</span></div></div>`
+    : `<div class="conv-h"><div class="eyebrow">Conversión de presupuestos</div></div><div class="hint">Aún no hay presupuestos enviados.</div>`;
 }
 function renderLista(){
   const q = slug($("fBuscar").value), fe=$("fEstado").value, fa=$("fAlmacen").value;
@@ -1549,7 +1574,7 @@ function renderTarifas(){
   $("tCeldas").innerHTML = tarifas.celdas.map((c,i)=>{ const coste = costes.celdas?.[c.id] ?? ""; const auto = pvpAuto(coste); const manual = c.pvpManual ? c.precio : "";
     return `<tr data-i="${i}" data-id="${esc(c.id)}"><td style="min-width:90px"><input type="text" data-k="marca" value="${esc(c.marca||"")}"></td><td style="min-width:100px"><input type="text" data-k="modelo" value="${esc(c.modelo)}"></td><td style="width:80px"><input type="text" data-k="formato" value="${esc(c.formato||"")}"></td><td style="width:96px"><input type="number" step="50" data-k="mah" value="${esc(c.mah??"")}"></td><td style="width:64px"><input type="text" data-k="descarga" value="${esc(c.descarga||"")}"></td><td style="width:100px"><input type="number" step="0.01" data-k="coste" value="${esc(coste)}"></td><td style="width:110px"><input type="number" step="0.01" data-k="pvp" value="${esc(manual)}" placeholder="${auto.toFixed(2)}" title="Automático: ${auto.toFixed(2)} €"></td><td class="act"><button class="iconbtn" data-del-celda="${i}" title="Quitar">✕</button></td></tr>`; }).join("") || `<tr><td colspan="8" class="muted">Sin celdas. Añade tus modelos.</td></tr>`;
   $("tBms").innerHTML = tarifas.bms.map((b,i)=>`<tr data-i="${i}" data-id="${esc(b.id)}"><td><input type="text" data-k="modelo" value="${esc(b.modelo)}"></td><td style="width:120px"><input type="text" data-k="serie" value="${esc(b.serie||"")}"></td><td style="width:84px">${i===0?"":`<input type="number" step="0.5" data-k="coste" value="${esc(costes.bms?.[b.id]??"")}">`}</td><td style="width:90px"><input type="number" step="0.5" data-k="precio" value="${esc(b.precio)}"${i===0?" disabled":""}></td><td class="act">${i===0?"":`<button class="iconbtn" data-del-bms="${i}" title="Quitar">✕</button>`}</td></tr>`).join("");
-  $("tHora").value = tarifas.hora; $("tHoraCoste").value = costes.hora ?? ""; $("tDiagCoste").value = costes.diagnosis ?? ""; $("tDiag").value = tarifas.diagnosis; $("tConsumibles").value = tarifas.consumibles ?? 5; $("tSenal").value = tarifas.senal ?? 30; $("tIva").value = tarifas.iva;
+  $("tHora").value = tarifas.hora; $("tHoraCoste").value = costes.hora ?? ""; $("tDiagCoste").value = costes.diagnosis ?? ""; $("tDiag").value = tarifas.diagnosis; $("tConsumibles").value = tarifas.consumibles ?? 5; $("tSenal").value = tarifas.senal ?? 30; $("tDiasLab").value = tarifas.diasLab ?? 22; $("tIva").value = tarifas.iva;
   $("tAlmacenes").value = config.almacenes.join("\n"); $("tEstados").value = config.estados.join("\n");
   const co = config.empresa||DEF_EMPRESA;
   $("tCoNombre").value=co.nombre||""; $("tCoRazon").value=co.razon||""; $("tCoNif").value=co.nif||""; $("tCoTel").value=co.tel||""; $("tCoDir").value=co.dir||""; $("tCoEmail").value=co.email||""; $("tCoWeb").value=co.web||""; $("tCoValidez").value=co.validez||15; $("tCoSerie").value=co.serie||""; $("tCoCond").value=co.cond||""; $("tCoCondSenal").value=co.condSenal||""; $("tCoBancos").value=co.bancos||""; $("tCoLegal").value=co.legal||"";
@@ -1566,7 +1591,7 @@ function readTarifasForm(){
   tarifas.bms = [...$("tBms").querySelectorAll("tr[data-i]")].map(tr=>{ const g=k=>{const el=tr.querySelector(`[data-k=${k}]`); return el?el.value:"";}; const id=tr.dataset.id||("b"+Math.random().toString(36).slice(2,7)); if(g("coste")!=="") nb[id]=+g("coste")||0; return {id, modelo:g("modelo").trim(), serie:g("serie").trim(), precio:+g("precio")||0}; }).filter(b=>b.modelo);
   if(!tarifas.bms.some(b=>b.id==="b0")) tarifas.bms.unshift({id:"b0",modelo:"Sin BMS",serie:"",precio:0});
   costes = {celdas:nc, bms:nb, hora:+$("tHoraCoste").value||0, diagnosis:+$("tDiagCoste").value||0};
-  tarifas.hora = +$("tHora").value||0; tarifas.diagnosis = +$("tDiag").value||0; tarifas.consumibles = +$("tConsumibles").value||0; tarifas.senal = +$("tSenal").value||0; tarifas.iva = +$("tIva").value||0;
+  tarifas.hora = +$("tHora").value||0; tarifas.diagnosis = +$("tDiag").value||0; tarifas.consumibles = +$("tConsumibles").value||0; tarifas.senal = +$("tSenal").value||0; tarifas.diasLab = Math.max(1, +$("tDiasLab").value||22); tarifas.iva = +$("tIva").value||0;
   config.almacenes = $("tAlmacenes").value.split("\n").map(s=>s.trim()).filter(Boolean);
   config.estados = $("tEstados").value.split("\n").map(s=>s.trim()).filter(Boolean);
   if(!config.almacenes.length) config.almacenes = [...DEF_CONFIG.almacenes];
@@ -1595,7 +1620,6 @@ const dayStr = d => `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate
 const presFecha = p => new Date(+p.aprobadoAt || +p.updatedAt || +p.createdAt || Date.now());
 const mesLabel = mk => { const [y,m] = mk.split("-"); return new Date(+y, +m-1, 1).toLocaleDateString("es-ES",{month:"short"}).replace(".","") + " " + y.slice(2); };
 const eur0 = n => (n<0?"−":"") + Math.abs(Math.round(n)).toLocaleString("es-ES") + " €";
-const pct = n => (isFinite(n) ? n.toFixed(1).replace(".",",") : "0,0") + " %";
 const aprobados = () => presupuestos.filter(p => p.estado==="aprobado" || p.estado==="facturado");
 function presetRange(k){
   const now = new Date(); const y = now.getFullYear(), m = now.getMonth(); const hoy = dayStr(now);
@@ -1607,24 +1631,45 @@ function presetRange(k){
   return [ds[0] || dayStr(new Date(y,m,1)), ds.length && ds[ds.length-1] > hoy ? ds[ds.length-1] : hoy];
 }
 // Importe de un gasto imputado a un mes (mk = "AAAA-MM") dentro del periodo [from, to]
+// Días laborables (lunes a viernes) de un mes "AAAA-MM" dentro del rango [from, to]
+function diasLabMes(mk, from, to){
+  const [y,m] = mk.split("-").map(Number); let n = 0, total = 0;
+  for(let d=1; d<=31; d++){ const dt = new Date(y, m-1, d); if(dt.getMonth()!==m-1) break; const wd = dt.getDay(); if(wd===0||wd===6) continue; total++; const ds = dayStr(dt); if((!from || ds>=from) && (!to || ds<=to)) n++; }
+  return {n, total};
+}
+const diasLab = () => Math.max(1, +tarifas.diasLab||22);
+// Importe mensual del gasto (sin repartir por días)
+function gastoMensual(g){ const imp = +g.importe||0; return g.tipo==="anual" ? imp/12 : g.tipo==="mensual" ? imp : 0; }
+// Importe de un gasto imputado a un mes dentro del periodo: los fijos se reparten entre los días laborables del mes
+// (22 por defecto); si el periodo cubre el mes entero se imputa completo.
 function gastoMes(g, mk, from, to){
   const imp = +g.importe||0; if(!imp) return 0;
   if(g.tipo==="puntual") return g.desde && g.desde.slice(0,7)===mk && (!from || g.desde>=from) && (!to || g.desde<=to) ? imp : 0;
   const activo = (!g.desde || g.desde.slice(0,7)<=mk) && (!g.hasta || g.hasta.slice(0,7)>=mk);
-  return activo ? (g.tipo==="anual" ? imp/12 : imp) : 0;
+  if(!activo) return 0;
+  const mes = gastoMensual(g); const {n, total} = diasLabMes(mk, from, to);
+  if(n>=total) return mes;
+  return mes * Math.min(1, n/diasLab());
 }
 function rentCalc(){
   const {from, to} = rent; const est = $("rEstado").value; const an = (window.TL && TL.analitica) ? TL.analitica() : {};
   const rows = aprobados().filter(p => !est || p.estado===est).map(p => {
     const f = presFecha(p); const dia = dayStr(f); const ingreso = (+p.base||0) - (+p.dtoImp||0);
-    const a = an[p.id]; const coste = a && a.coste!=null ? +a.coste : calcLineas(p).analitica.coste;
-    return {p, fecha:f, dia, mk:dia.slice(0,7), ingreso, coste, beneficio:ingreso-coste};
+    const a = an[p.id]; const calc = a && a.coste!=null ? a : calcLineas(p).analitica; const coste = +calc.coste||0;
+    const des = Array.isArray(calc.desglose) ? calc.desglose : [];
+    const costeHoras = des.filter(d=>d.c==="Horas").reduce((x,d)=>x+(+d.total||0),0), costeDiag = des.filter(d=>d.c==="Diagnosis").reduce((x,d)=>x+(+d.total||0),0);
+    const horas = prodsOf(p).reduce((x,pr)=>x+(+pr.horas||0),0);
+    return {p, fecha:f, dia, mk:dia.slice(0,7), ingreso, coste, horas, costeHoras, costeDiag, costeMat:Math.max(0, coste-costeHoras-costeDiag), costeSinHoras:coste-costeHoras, beneficio:ingreso-coste};
   }).filter(r => (!from || r.dia>=from) && (!to || r.dia<=to)).sort((a,b)=>b.fecha-a.fecha);
   const months = [];
   if(from && to && from<=to){ let [y,m] = from.split("-").map(Number); const [y2,m2] = to.split("-").map(Number); while((y<y2 || (y===y2 && m<=m2)) && months.length<120){ months.push(`${y}-${pad2(m)}`); m++; if(m>12){ m=1; y++; } } }
-  const per = months.map(mk => { const rs = rows.filter(r=>r.mk===mk); const ingresos = rs.reduce((a,r)=>a+r.ingreso,0), costes = rs.reduce((a,r)=>a+r.coste,0); const fijos = gastos.reduce((a,g)=>a+gastoMes(g,mk,from,to),0); return {mk, n:rs.length, ingresos, costes, fijos, neto:ingresos-costes-fijos}; });
-  const T = { n:rows.length, ingresos:rows.reduce((a,r)=>a+r.ingreso,0), costes:rows.reduce((a,r)=>a+r.coste,0), fijos:per.reduce((a,m)=>a+m.fijos,0), meses:months.length };
-  T.bruto = T.ingresos - T.costes; T.neto = T.bruto - T.fijos;
+  const per = months.map(mk => { const rs = rows.filter(r=>r.mk===mk); const ingresos = rs.reduce((a,r)=>a+r.ingreso,0), costes = rs.reduce((a,r)=>a+r.costeSinHoras,0); const fijos = gastos.reduce((a,g)=>a+gastoMes(g,mk,from,to),0); return {mk, n:rs.length, ingresos, costes, fijos, neto:ingresos-costes-fijos}; });
+  const sum = k => rows.reduce((a,r)=>a+r[k],0);
+  const T = { n:rows.length, ingresos:sum("ingreso"), costes:sum("costeSinHoras"), costeFull:sum("coste"), horas:sum("horas"), costeHoras:sum("costeHoras"), costeDiag:sum("costeDiag"), costeMat:sum("costeMat"), fijos:per.reduce((a,m)=>a+m.fijos,0), meses:months.length };
+  T.bruto = T.ingresos - T.costes; T.neto = T.bruto - T.fijos; T.brutoFull = T.ingresos - T.costeFull; T.brutoMat = T.ingresos - T.costeMat;
+  const mkHoy = dayStr(new Date()).slice(0,7);
+  T.fijoMes = gastos.filter(g=>g.tipo!=="puntual" && (!g.desde || g.desde.slice(0,7)<=mkHoy) && (!g.hasta || g.hasta.slice(0,7)>=mkHoy)).reduce((a,g)=>a+gastoMensual(g),0);
+  T.costeDia = T.fijoMes/diasLab();
   return {rows, per, T};
 }
 function renderRent(){
@@ -1641,10 +1686,11 @@ function renderRentNums(){
   const cls = v => v<0 ? "neg" : v>0 ? "pos" : "";
   const tiles = [
     {k:"Ingresos (sin IVA)", v:eur(T.ingresos), sub:`${T.n} presupuesto${T.n===1?"":"s"}${T.n?` · ticket medio ${eur(T.ingresos/T.n)}`:""}`},
-    {k:"Costes directos", v:eur(T.costes), sub:"celdas, BMS, horas y diagnosis"},
+    {k:"Costes directos", v:eur(T.costes), sub:`celdas, BMS, materiales y diagnosis · sin las ${T.horas.toLocaleString("es-ES")} h de personal`},
     {k:"Beneficio bruto", v:eur(T.bruto), sub:`margen ${pct(T.ingresos>0 ? T.bruto/T.ingresos*100 : 0)}`, c:cls(T.bruto)},
-    {k:"Gastos fijos del periodo", v:eur(T.fijos), sub:`${T.meses} mes${T.meses===1?"":"es"} imputado${T.meses===1?"":"s"}`},
+    {k:"Gastos fijos del periodo", v:eur(T.fijos), sub:`por días laborables · ${T.meses} mes${T.meses===1?"":"es"}`},
     {k:"Beneficio neto", v:eur(T.neto), sub:`margen neto ${pct(T.ingresos>0 ? T.neto/T.ingresos*100 : 0)}`, c:cls(T.neto)},
+    {k:"Coste por día abierto", v:eur(T.costeDia), sub:`${eur(T.fijoMes)} fijos al mes ÷ ${diasLab()} días`},
   ];
   $("rStrip").innerHTML = tiles.map(t=>`<div class="tile"><div class="eyebrow">${esc(t.k)}</div><div class="v ${t.c||""}">${esc(t.v)}</div><div class="sub">${esc(t.sub)}</div></div>`).join("");
   $("rLegend").innerHTML = `<span><i style="background:var(--s1)"></i>Ingresos</span><span><i style="background:var(--s2)"></i>Costes directos</span><span><i style="background:var(--s3)"></i>Gastos fijos</span>`;
@@ -1654,13 +1700,18 @@ function renderRentNums(){
   // Tabla de presupuestos aprobados
   $("rCount").textContent = rows.length ? `${rows.length} en el periodo` : "";
   $("rCsv").disabled = !rows.length || !downloads;
-  $("rTabla").innerHTML = rows.length ? `<thead><tr><th>Aprobado</th><th>Nº</th><th>Cliente</th><th>Batería / productos</th><th>Estado</th><th class="r">Ingreso</th><th class="r">Coste</th><th class="r">Beneficio</th><th class="r">Margen</th></tr></thead><tbody>${rows.map(r => { const p=r.p; const e=encargos.find(x=>x.id===p.encargoId); const np=prodsOf(p).length;
-      return `<tr><td class="num" style="white-space:nowrap">${esc(r.fecha.toLocaleDateString("es-ES"))}</td><td><button class="lnk" data-pres="${esc(p.id)}" title="Abrir el presupuesto">${esc(p.num)}</button></td><td>${esc(p.cliente||e?.cliente||"—")}</td><td>${np>1?`<span class="wh">${np} productos</span> `:""}${esc(p.bateria||e?.bateria||"")}</td><td><span class="chip ${esc(p.estado)}">${esc(p.estado)}</span>${p.numFactura?` <span class="wh">${esc(p.numFactura)}</span>`:""}</td><td class="r">${eur(r.ingreso)}</td><td class="r">${eur(r.coste)}</td><td class="r ${cls(r.beneficio)}">${eur(r.beneficio)}</td><td class="r">${pct(r.ingreso>0 ? r.beneficio/r.ingreso*100 : 0)}</td></tr>`; }).join("")}</tbody><tfoot><tr><td colspan="5">Total del periodo</td><td class="r">${eur(T.ingresos)}</td><td class="r">${eur(T.costes)}</td><td class="r ${cls(T.bruto)}">${eur(T.bruto)}</td><td class="r">${pct(T.ingresos>0 ? T.bruto/T.ingresos*100 : 0)}</td></tr></tfoot>`
+  $("rTabla").innerHTML = rows.length ? `<thead><tr><th>Aprobado</th><th>Nº</th><th>Cliente</th><th>Batería / productos</th><th>Estado</th><th class="r">Horas</th><th class="r">Ingreso</th><th class="r">Coste</th><th class="r">Beneficio</th><th class="r">Margen</th></tr></thead><tbody>${rows.map(r => { const p=r.p; const e=encargos.find(x=>x.id===p.encargoId); const np=prodsOf(p).length;
+      return `<tr><td class="num" style="white-space:nowrap">${esc(r.fecha.toLocaleDateString("es-ES"))}</td><td><button class="lnk" data-pres="${esc(p.id)}" title="Abrir el presupuesto">${esc(p.num)}</button></td><td>${esc(p.cliente||e?.cliente||"—")}</td><td>${np>1?`<span class="wh">${np} productos</span> `:""}${esc(p.bateria||e?.bateria||"")}</td><td><span class="chip ${esc(p.estado)}">${esc(p.estado)}</span>${p.numFactura?` <span class="wh">${esc(p.numFactura)}</span>`:""}</td><td class="r">${r.horas?r.horas.toLocaleString("es-ES")+" h":"—"}</td><td class="r">${eur(r.ingreso)}</td><td class="r">${eur(r.coste)}</td><td class="r ${cls(r.beneficio)}">${eur(r.beneficio)}</td><td class="r">${pct(r.ingreso>0 ? r.beneficio/r.ingreso*100 : 0)}</td></tr>`; }).join("")}</tbody><tfoot><tr><td colspan="5">Total del periodo</td><td class="r">${T.horas.toLocaleString("es-ES")} h</td><td class="r">${eur(T.ingresos)}</td><td class="r">${eur(T.costeFull)}</td><td class="r ${cls(T.brutoFull)}">${eur(T.brutoFull)}</td><td class="r">${pct(T.ingresos>0 ? T.brutoFull/T.ingresos*100 : 0)}</td></tr></tfoot>`
     : `<tbody><tr><td class="empty">No hay presupuestos aprobados en este periodo. Cambia las fechas o aprueba un presupuesto.</td></tr></tbody>`;
   $("rTabla").querySelectorAll("[data-pres]").forEach(b => b.addEventListener("click", () => { openPres(b.dataset.pres); showView("presupuestos"); }));
+  // Segunda tabla: solo materiales (sin horas de personal ni diagnosis)
+  $("rCountMat").textContent = rows.length ? `${rows.length} en el periodo` : "";
+  $("rTablaMat").innerHTML = rows.length ? `<thead><tr><th>Aprobado</th><th>Nº</th><th>Cliente</th><th>Batería / productos</th><th class="r">Ingreso</th><th class="r">Materiales</th><th class="r">Horas</th><th class="r">Diagnosis</th><th class="r">Beneficio</th><th class="r">Margen</th></tr></thead><tbody>${rows.map(r => { const p=r.p; const e=encargos.find(x=>x.id===p.encargoId); const b = r.ingreso-r.costeMat;
+      return `<tr><td class="num" style="white-space:nowrap">${esc(r.fecha.toLocaleDateString("es-ES"))}</td><td><button class="lnk" data-pres="${esc(p.id)}" title="Abrir el presupuesto">${esc(p.num)}</button></td><td>${esc(p.cliente||e?.cliente||"—")}</td><td>${esc(p.bateria||e?.bateria||"")}</td><td class="r">${eur(r.ingreso)}</td><td class="r">${eur(r.costeMat)}</td><td class="r muted">${r.horas?r.horas.toLocaleString("es-ES")+" h":"—"}</td><td class="r muted">${r.costeDiag?eur(r.costeDiag):"—"}</td><td class="r ${cls(b)}">${eur(b)}</td><td class="r">${pct(r.ingreso>0 ? b/r.ingreso*100 : 0)}</td></tr>`; }).join("")}</tbody><tfoot><tr><td colspan="4">Total del periodo</td><td class="r">${eur(T.ingresos)}</td><td class="r">${eur(T.costeMat)}</td><td class="r">${T.horas.toLocaleString("es-ES")} h</td><td class="r">${eur(T.costeDiag)}</td><td class="r ${cls(T.brutoMat)}">${eur(T.brutoMat)}</td><td class="r">${pct(T.ingresos>0 ? T.brutoMat/T.ingresos*100 : 0)}</td></tr></tfoot>`
+    : `<tbody><tr><td class="empty">No hay presupuestos aprobados en este periodo.</td></tr></tbody>`;
+  $("rTablaMat").querySelectorAll("[data-pres]").forEach(b => b.addEventListener("click", () => { openPres(b.dataset.pres); showView("presupuestos"); }));
   // Punto de equilibrio con los gastos fijos del mes en curso
-  const mkHoy = dayStr(new Date()).slice(0,7);
-  const fijoMes = gastos.filter(g=>g.tipo!=="puntual").reduce((a,g)=>a+gastoMes(g, mkHoy), 0);
+  const fijoMes = T.fijoMes;
   const mBruto = T.ingresos>0 ? T.bruto/T.ingresos : 0;
   let eq;
   if(!fijoMes) eq = `<div><div class="k">Punto de equilibrio</div><div class="d" style="font-size:13px">Añade tus gastos fijos (alquiler, sueldos, seguros, suministros…) para ver el beneficio neto real y cuánto hay que facturar al mes para cubrirlos.</div></div>`;
@@ -1750,8 +1801,8 @@ $("rEstado").addEventListener("change", renderRentNums);
 $("rCsv").addEventListener("click", async () => {
   if(!downloads || !rentRows.length) return;
   const dec = n => (Math.round(n*100)/100).toFixed(2).replace(".",",");
-  const hdr = ["Fecha aprobación","Número","Cliente","Batería / productos","Estado","Nº factura","Ingreso sin IVA","Coste","Beneficio","Margen %"];
-  const rows = rentRows.map(r => [r.dia, r.p.num, r.p.cliente||"", r.p.bateria||"", r.p.estado, r.p.numFactura||"", dec(r.ingreso), dec(r.coste), dec(r.beneficio), dec(r.ingreso>0 ? r.beneficio/r.ingreso*100 : 0)].map(v=>`"${String(v).replace(/"/g,'""')}"`).join(";"));
+  const hdr = ["Fecha aprobación","Número","Cliente","Batería / productos","Estado","Nº factura","Horas","Ingreso sin IVA","Coste","Beneficio","Margen %","Coste materiales","Coste horas","Coste diagnosis"];
+  const rows = rentRows.map(r => [r.dia, r.p.num, r.p.cliente||"", r.p.bateria||"", r.p.estado, r.p.numFactura||"", dec(r.horas), dec(r.ingreso), dec(r.coste), dec(r.beneficio), dec(r.ingreso>0 ? r.beneficio/r.ingreso*100 : 0), dec(r.costeMat), dec(r.costeHoras), dec(r.costeDiag)].map(v=>`"${String(v).replace(/"/g,'""')}"`).join(";"));
   try{ await downloads.save({filename:`rentabilidad-${rent.from||"inicio"}_${rent.to||"hoy"}.csv`, data:new Blob(["﻿"+[hdr.join(";"),...rows].join("\r\n")],{type:"text/csv"})}); toast("CSV preparado"); }catch(err){ toast("No se pudo descargar: "+(err.message||err.code)); }
 });
 
@@ -1787,7 +1838,7 @@ function loadDemo(){
   $("statusLine").hidden=false; $("statusLine").textContent = "Modo demostración: los datos de ejemplo no se guardan. Abre el panel desde claude.ai para trabajar con datos compartidos.";
 }
 function subscribeAll(){
-  db.doc("config/tarifas").onSnapshot(s => { if(ex(s)){ const d=s.data(); tarifas = {celdas:d.celdas||[], bms:d.bms||[], hora:d.hora??DEF_TARIFAS.hora, diagnosis:d.diagnosis??DEF_TARIFAS.diagnosis, iva:d.iva??DEF_TARIFAS.iva, margen:d.margen??DEF_TARIFAS.margen, margenCustom:d.margenCustom??DEF_TARIFAS.margenCustom, consumibles:d.consumibles??DEF_TARIFAS.consumibles, senal:d.senal??DEF_TARIFAS.senal}; } renderAll(); if($("view-tarifas").classList.contains("active")) renderTarifas(); }, e=>console.warn(e));
+  db.doc("config/tarifas").onSnapshot(s => { if(ex(s)){ const d=s.data(); tarifas = {celdas:d.celdas||[], bms:d.bms||[], hora:d.hora??DEF_TARIFAS.hora, diagnosis:d.diagnosis??DEF_TARIFAS.diagnosis, iva:d.iva??DEF_TARIFAS.iva, margen:d.margen??DEF_TARIFAS.margen, margenCustom:d.margenCustom??DEF_TARIFAS.margenCustom, consumibles:d.consumibles??DEF_TARIFAS.consumibles, senal:d.senal??DEF_TARIFAS.senal, diasLab:d.diasLab??DEF_TARIFAS.diasLab}; } renderAll(); if($("view-tarifas").classList.contains("active")) renderTarifas(); }, e=>console.warn(e));
   if(isAdmin) db.doc("config/costes").onSnapshot(s => { costes = ex(s) ? {celdas:s.data().celdas||{}, bms:s.data().bms||{}, hora:s.data().hora||0, diagnosis:s.data().diagnosis||0} : {celdas:{},bms:{},hora:0,diagnosis:0}; renderCalc(); if($("view-tarifas").classList.contains("active")) renderTarifas(); }, e=>console.warn(e)); else costes = {celdas:{},bms:{},hora:0};
   if(isAdmin) db.doc("config/gastos").onSnapshot(s => { if(gastosDirty) return; gastos = ex(s) && Array.isArray(s.data().items) ? s.data().items : []; if($("view-rentabilidad").classList.contains("active")) renderRent(); }, e=>console.warn(e));
   db.doc("config/general").onSnapshot(s => { if(ex(s)){ const d=s.data(); config = {almacenes:d.almacenes?.length?d.almacenes:DEF_CONFIG.almacenes, estados:d.estados?.length?d.estados:DEF_CONFIG.estados, empresa:{...DEF_EMPRESA, ...(d.empresa||{})}}; } renderAll(); }, e=>console.warn(e));
