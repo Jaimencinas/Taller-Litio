@@ -333,7 +333,9 @@ body[data-auth="out"] .top, body[data-auth="out"] main{visibility:hidden}
 .conv-h{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin-bottom:6px}
 .conv-bar{display:flex;height:12px;border-radius:999px;overflow:hidden;background:var(--surface-2);gap:2px}
 .conv-bar span{display:block;height:100%}
-.conv-bar .ok{background:var(--ok)}.conv-bar .crit{background:var(--crit)}.conv-bar .pend{background:var(--warn)}
+.conv-bar .ok{background:var(--ok)}.conv-bar .crit{background:var(--crit)}.conv-bar .pend{background:var(--warn)}.conv-bar .sin{background:var(--line-strong)}
+.kbar{margin-bottom:10px;gap:8px 12px}
+.kbar label.f{min-width:120px}
 .conv-k{display:flex;gap:18px;flex-wrap:wrap;margin-top:6px;font-size:13px}
 .conv-k b{font-family:var(--display);font-size:20px;font-weight:700;margin-right:4px}
 .conv-k b.ok{color:var(--ok)}.conv-k b.crit{color:var(--crit)}
@@ -406,6 +408,18 @@ body[data-auth="out"] .top, body[data-auth="out"] main{visibility:hidden}
 <main>
 <!-- ============ ENCARGOS ============ -->
 <section class="view active" id="view-encargos">
+  <div class="rbar kbar">
+    <span class="eyebrow" style="align-self:center">KPIs por fecha de entrada del encargo</span>
+    <div class="seg" id="kPresets" role="group" aria-label="Periodo de los KPIs">
+      <button class="btn sm" data-preset="todo">Todo</button>
+      <button class="btn sm" data-preset="mes">Este mes</button>
+      <button class="btn sm" data-preset="mesant">Mes pasado</button>
+      <button class="btn sm" data-preset="3m">Últimos 3 meses</button>
+      <button class="btn sm" data-preset="anio">Este año</button>
+    </div>
+    <label class="f">Desde<input type="date" id="kDesde"></label>
+    <label class="f">Hasta<input type="date" id="kHasta"></label>
+  </div>
   <div class="strip" id="strip"></div>
   <div class="panel admin-only conv" id="conv"></div>
   <div class="cols">
@@ -797,29 +811,59 @@ function refreshSelects(){
 }
 
 // ---------- Encargos: strip + list ----------
+// Clasificación de cada encargo para los KPIs: aceptado / rechazado / pendiente de aprobar / sin presupuestar.
+// Se mira el estado del encargo y también sus presupuestos (por si el presupuesto se aprobó o rechazó sin cambiar el estado).
+function clasEncargo(e){
+  const st = slug(e.estado); const ps = presupuestos.filter(p=>p.encargoId===e.id);
+  const presApro = ps.some(p=>p.estado==="aprobado"||p.estado==="facturado"), presRech = ps.some(p=>p.estado==="rechazado"), presEnv = ps.some(p=>p.estado==="enviado");
+  if(/rechaz/.test(st)) return "rechazado";
+  if((/aprob/.test(st) && !/esperando|pendiente/.test(st)) || /reparaci|prueba|listo|entreg/.test(st) || presApro) return "aceptado";
+  if(presRech) return "rechazado";
+  if(/esperando|presupuestado/.test(st) || presEnv) return "pendiente";
+  return "sin";
+}
+const kpi = { preset:"todo", from:"", to:"" };
+const encFecha = e => e.fecha || (e.createdAt ? dayStr(new Date(e.createdAt)) : "");
+function kpiRange(k){
+  const now = new Date(); const y = now.getFullYear(), m = now.getMonth(); const hoy = dayStr(now);
+  if(k==="mes") return [dayStr(new Date(y,m,1)), hoy];
+  if(k==="mesant") return [dayStr(new Date(y,m-1,1)), dayStr(new Date(y,m,0))];
+  if(k==="3m") return [dayStr(new Date(y,m-2,1)), hoy];
+  if(k==="anio") return [`${y}-01-01`, hoy];
+  return ["",""];
+}
 function renderStrip(){
-  const abiertos = encargos.filter(e => !["Entregado","Rechazado"].includes(e.estado));
+  if(kpi.preset!=="custom"){ [kpi.from, kpi.to] = kpiRange(kpi.preset); }
+  $("kDesde").value = kpi.from; $("kHasta").value = kpi.to;
+  $("kPresets").querySelectorAll("[data-preset]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.preset===kpi.preset)));
+  const enFecha = encargos.filter(e => { const f = encFecha(e); return (!kpi.from || f>=kpi.from) && (!kpi.to || f<=kpi.to); });
+  const abiertos = enFecha.filter(e => !["Entregado","Rechazado"].includes(e.estado));
   const porAlm = {}; abiertos.forEach(e => porAlm[e.almacen||"—"] = (porAlm[e.almacen||"—"]||0)+1);
-  const listos = encargos.filter(e => e.estado==="Listo").length;
-  const nP = est => presupuestos.filter(p=>est.includes(p.estado)).length;
-  const pendientes = nP(["enviado"]), aprobados = nP(["aprobado","facturado"]), rechazados = nP(["rechazado"]), facturados = nP(["facturado"]);
+  const listos = enFecha.filter(e => e.estado==="Listo").length;
+  const cl = {aceptado:0, rechazado:0, pendiente:0, sin:0}; enFecha.forEach(e => cl[clasEncargo(e)]++);
+  const total = enFecha.length;
+  const facturados = enFecha.filter(e => presupuestos.some(p=>p.encargoId===e.id && p.estado==="facturado")).length;
+  const periodo = kpi.from || kpi.to ? "en el periodo" : "en total";
   const tiles = [
-    {k:"Encargos abiertos", v:abiertos.length, sub:`${encargos.length} en total`},
-    {k:"Pendientes de aprobar", v:pendientes, sub:"presupuesto enviado, sin respuesta"},
-    {k:"Presupuestos aprobados", v:aprobados, sub:`${facturados} facturado${facturados===1?"":"s"}`},
-    {k:"Presupuestos rechazados", v:rechazados, sub:"por el cliente"},
+    {k:"Encargos abiertos", v:abiertos.length, sub:`${total} ${periodo}`},
+    {k:"Pendientes de aprobar", v:cl.pendiente, sub:"presupuesto enviado, sin respuesta"},
+    {k:"Presupuestos aprobados", v:cl.aceptado, sub:`${facturados} facturado${facturados===1?"":"s"}`},
+    {k:"Presupuestos rechazados", v:cl.rechazado, sub:"por el cliente"},
+    {k:"Sin presupuestar", v:cl.sin, sub:"recibidos o en diagnosis"},
     {k:"Listos para entregar", v:listos, sub:"reparación terminada"},
     ...Object.entries(porAlm).map(([a,n])=>({k:a, v:n, sub:"en este almacén"})),
   ];
   $("strip").innerHTML = tiles.map(t=>`<div class="tile"><div class="eyebrow">${esc(t.k)}</div><div class="v num">${t.v}</div><div class="sub">${esc(t.sub)}</div></div>`).join("");
-  // Conversión de presupuestos (solo administrador): lanzados = enviados, aprobados, facturados y rechazados
-  const lanzados = pendientes + aprobados + rechazados;
-  const pA = lanzados ? aprobados/lanzados*100 : 0, pR = lanzados ? rechazados/lanzados*100 : 0, pP = lanzados ? pendientes/lanzados*100 : 0;
-  $("conv").innerHTML = lanzados ? `<div class="conv-h"><div class="eyebrow">Conversión de presupuestos</div><span class="hint">${lanzados} lanzado${lanzados===1?"":"s"} hasta hoy</span></div>
-    <div class="conv-bar" role="img" aria-label="${pct(pA)} aceptados, ${pct(pR)} rechazados, ${pct(pP)} pendientes"><span class="ok" style="width:${pA}%"></span><span class="crit" style="width:${pR}%"></span><span class="pend" style="width:${pP}%"></span></div>
-    <div class="conv-k"><div><b class="ok">${pct(pA)}</b> aceptados <span class="muted">(${aprobados})</span></div><div><b class="crit">${pct(pR)}</b> rechazados <span class="muted">(${rechazados})</span></div><div><b>${pct(pP)}</b> pendientes <span class="muted">(${pendientes})</span></div></div>`
-    : `<div class="conv-h"><div class="eyebrow">Conversión de presupuestos</div></div><div class="hint">Aún no hay presupuestos enviados.</div>`;
+  // Conversión sobre el total de encargos del periodo (solo administrador)
+  const pc = n => total ? n/total*100 : 0;
+  const pA = pc(cl.aceptado), pR = pc(cl.rechazado), pP = pc(cl.pendiente), pS = pc(cl.sin);
+  $("conv").innerHTML = total ? `<div class="conv-h"><div class="eyebrow">Conversión de encargos</div><span class="hint">${total} encargo${total===1?"":"s"} ${periodo}</span></div>
+    <div class="conv-bar" role="img" aria-label="${pct(pA)} aceptados, ${pct(pR)} rechazados, ${pct(pP)} pendientes, ${pct(pS)} sin presupuestar"><span class="ok" style="width:${pA}%"></span><span class="crit" style="width:${pR}%"></span><span class="pend" style="width:${pP}%"></span><span class="sin" style="width:${pS}%"></span></div>
+    <div class="conv-k"><div><b class="ok">${pct(pA)}</b> aceptados <span class="muted">(${cl.aceptado})</span></div><div><b class="crit">${pct(pR)}</b> rechazados <span class="muted">(${cl.rechazado})</span></div><div><b>${pct(pP)}</b> pendientes <span class="muted">(${cl.pendiente})</span></div><div><b class="muted">${pct(pS)}</b> sin presupuestar <span class="muted">(${cl.sin})</span></div></div>`
+    : `<div class="conv-h"><div class="eyebrow">Conversión de encargos</div></div><div class="hint">No hay encargos en este periodo.</div>`;
 }
+$("kPresets").querySelectorAll("[data-preset]").forEach(b => b.addEventListener("click", () => { kpi.preset = b.dataset.preset; renderStrip(); }));
+["kDesde","kHasta"].forEach(id => $(id).addEventListener("change", () => { kpi.preset = "custom"; kpi.from = $("kDesde").value; kpi.to = $("kHasta").value; renderStrip(); }));
 function renderLista(){
   const q = slug($("fBuscar").value), fe=$("fEstado").value, fa=$("fAlmacen").value;
   let rows = encargos.filter(e => (!fe || e.estado===fe) && (!fa || e.almacen===fa) && (!q || slug(e.cliente+e.ref+e.bateria+e.desc).includes(q)));
