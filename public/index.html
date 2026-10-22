@@ -608,7 +608,7 @@ body[data-auth="out"] .top, body[data-auth="out"] main{visibility:hidden}
   <div class="strip" id="rStrip"></div>
   <div class="cols rcols">
     <div class="panel">
-      <div class="panel-h"><h2>Evolución mensual</h2><div class="toolbar"><div class="legend" id="rLegend"></div></div></div>
+      <div class="panel-h"><h2>Evolución</h2><div class="toolbar"><div class="seg" id="rGran" role="group" aria-label="Agrupar por"><button class="btn sm" data-gran="dia" aria-pressed="true">Por día</button><button class="btn sm" data-gran="semana" aria-pressed="false">Por semana</button><button class="btn sm" data-gran="mes" aria-pressed="false">Por mes</button></div><div class="legend" id="rLegend"></div></div></div>
       <div class="panel-b">
         <div class="chart" id="rChart"></div>
         <details class="rdet"><summary>Ver los datos por mes en tabla</summary><div class="tblwrap"><table class="tar rtab" id="rMeses"></table></div></details>
@@ -618,7 +618,7 @@ body[data-auth="out"] .top, body[data-auth="out"] main{visibility:hidden}
       <div class="panel-h"><h2>Gastos fijos y otros gastos</h2><div class="toolbar"><button class="btn sm" id="rAddGasto">+ Añadir gasto</button></div></div>
       <div class="panel-b">
         <div class="gastos" id="rGastos"></div>
-        <div class="hint" style="margin-top:8px">Importes sin IVA. <b>Mensual</b> y <b>anual</b> (se reparte en 12) se reparten entre los días laborables del mes (22, cambiable en Tarifas) y se imputan por los días laborables que entran en el periodo, entre «Desde» y «Hasta» (vacío = siempre). <b>Puntual</b> cuenta una sola vez en su fecha.</div>
+        <div class="hint" style="margin-top:8px">Importes sin IVA. <b>Mensual</b> y <b>anual</b> (se reparte en 12) se reparten entre los días laborables del mes (22, cambiable en Tarifas): cada lunes a viernes carga su parte y el mes completo suma el importe mensual. Se imputan entre «Desde» y «Hasta» (vacío = siempre). <b>Puntual</b> cuenta una sola vez en su fecha.</div>
         <div style="display:flex;gap:10px;align-items:center;justify-content:flex-end;margin-top:10px"><span class="saved" id="rSaved"></span><button class="btn primary" id="rGuardarGastos">Guardar gastos</button></div>
         <div class="profit" id="rEquilibrio" style="grid-template-columns:1fr"></div>
       </div>
@@ -1613,11 +1613,16 @@ $("tGuardar").addEventListener("click", async () => {
 // Presupuestos aprobados/facturados del periodo: ingresos (sin IVA) − costes directos − gastos fijos = beneficio neto.
 let gastos = [];            // [{id, concepto, importe, tipo:"mensual"|"anual"|"puntual", desde:"AAAA-MM-DD", hasta:"AAAA-MM-DD"}]
 let gastosDirty = false;    // hay cambios en gastos sin guardar
-const rent = { preset:"anio", from:"", to:"" };
+const rent = { preset:"anio", from:"", to:"", gran:"dia" };
 let rentRows = [];          // filas de la tabla de aprobados (para exportar)
 const pad2 = n => String(n).padStart(2,"0");
 const dayStr = d => `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
 const presFecha = p => new Date(+p.aprobadoAt || +p.updatedAt || +p.createdAt || Date.now());
+const diaLabel = ds => { const d = new Date(ds+"T12:00:00"); return d.toLocaleDateString("es-ES",{day:"numeric",month:"short"}).replace(".",""); };
+const diaLabelLargo = ds => { const d = new Date(ds+"T12:00:00"); return d.toLocaleDateString("es-ES",{weekday:"short",day:"numeric",month:"short"}).replace(/\./g,""); };
+const semLabel = ds => "sem. " + diaLabel(ds);
+const bucketLabel = b => b.tipo==="dia" ? diaLabelLargo(b.k) : b.tipo==="semana" ? semLabel(b.k) : mesLabel(b.k);
+const bucketShort = b => b.tipo==="dia" ? diaLabel(b.k) : b.tipo==="semana" ? diaLabel(b.k) : mesLabel(b.k);
 const mesLabel = mk => { const [y,m] = mk.split("-"); return new Date(+y, +m-1, 1).toLocaleDateString("es-ES",{month:"short"}).replace(".","") + " " + y.slice(2); };
 const eur0 = n => (n<0?"−":"") + Math.abs(Math.round(n)).toLocaleString("es-ES") + " €";
 const aprobados = () => presupuestos.filter(p => p.estado==="aprobado" || p.estado==="facturado");
@@ -1642,14 +1647,20 @@ const diasLab = () => Math.max(1, +tarifas.diasLab||22);
 function gastoMensual(g){ const imp = +g.importe||0; return g.tipo==="anual" ? imp/12 : g.tipo==="mensual" ? imp : 0; }
 // Importe de un gasto imputado a un mes dentro del periodo: los fijos se reparten entre los días laborables del mes
 // (22 por defecto); si el periodo cubre el mes entero se imputa completo.
-function gastoMes(g, mk, from, to){
+// Importe de un gasto en un día concreto. Los fijos se reparten entre los días laborables (22 por defecto): cada
+// lunes-viernes carga mensual÷22; el mes completo suma exactamente el importe mensual (el último día laborable ajusta el resto).
+function gastoDia(g, ds){
   const imp = +g.importe||0; if(!imp) return 0;
-  if(g.tipo==="puntual") return g.desde && g.desde.slice(0,7)===mk && (!from || g.desde>=from) && (!to || g.desde<=to) ? imp : 0;
+  if(g.tipo==="puntual") return g.desde===ds ? imp : 0;
+  const mk = ds.slice(0,7);
   const activo = (!g.desde || g.desde.slice(0,7)<=mk) && (!g.hasta || g.hasta.slice(0,7)>=mk);
   if(!activo) return 0;
-  const mes = gastoMensual(g); const {n, total} = diasLabMes(mk, from, to);
-  if(n>=total) return mes;
-  return mes * Math.min(1, n/diasLab());
+  const d = new Date(ds+"T12:00:00"); const wd = d.getDay(); if(wd===0||wd===6) return 0;
+  const mes = gastoMensual(g); const porDia = mes/diasLab();
+  const {total} = diasLabMes(mk); let idx = 0; for(let x=1; x<=d.getDate(); x++){ const w = new Date(d.getFullYear(), d.getMonth(), x).getDay(); if(w!==0 && w!==6) idx++; } // nº de día laborable dentro del mes
+  const esUltimo = idx===total;
+  if(esUltimo) return Math.max(0, mes - porDia*(total-1));   // ajuste final: el mes suma lo mensual
+  return idx<=diasLab() ? porDia : 0;
 }
 function rentCalc(){
   const {from, to} = rent; const est = $("rEstado").value; const an = (window.TL && TL.analitica) ? TL.analitica() : {};
@@ -1661,16 +1672,22 @@ function rentCalc(){
     const horas = prodsOf(p).reduce((x,pr)=>x+(+pr.horas||0),0);
     return {p, fecha:f, dia, mk:dia.slice(0,7), ingreso, coste, horas, costeHoras, costeDiag, costeMat:Math.max(0, coste-costeHoras-costeDiag), costeSinHoras:coste-costeHoras, beneficio:ingreso-coste};
   }).filter(r => (!from || r.dia>=from) && (!to || r.dia<=to)).sort((a,b)=>b.fecha-a.fecha);
-  const months = [];
-  if(from && to && from<=to){ let [y,m] = from.split("-").map(Number); const [y2,m2] = to.split("-").map(Number); while((y<y2 || (y===y2 && m<=m2)) && months.length<120){ months.push(`${y}-${pad2(m)}`); m++; if(m>12){ m=1; y++; } } }
-  const per = months.map(mk => { const rs = rows.filter(r=>r.mk===mk); const ingresos = rs.reduce((a,r)=>a+r.ingreso,0), costes = rs.reduce((a,r)=>a+r.costeSinHoras,0); const fijos = gastos.reduce((a,g)=>a+gastoMes(g,mk,from,to),0); return {mk, n:rs.length, ingresos, costes, fijos, neto:ingresos-costes-fijos}; });
+  // Días del periodo: cada día lleva sus presupuestos aprobados y su parte de gastos fijos
+  const days = [];
+  if(from && to && from<=to){ const d = new Date(from+"T12:00:00"); const end = new Date(to+"T12:00:00"); while(d<=end && days.length<1100){ const ds = dayStr(d); const rs = rows.filter(r=>r.dia===ds); const ingresos = rs.reduce((a,r)=>a+r.ingreso,0), costes = rs.reduce((a,r)=>a+r.costeSinHoras,0); const fijos = gastos.reduce((a,g)=>a+gastoDia(g,ds),0); days.push({tipo:"dia", k:ds, mk:ds.slice(0,7), n:rs.length, ingresos, costes, fijos, neto:ingresos-costes-fijos}); d.setDate(d.getDate()+1); } }
+  const agrupar = (tipo, keyOf) => { const out = []; days.forEach(dd => { const k = keyOf(dd); let b = out[out.length-1]; if(!b || b.k!==k){ b = {tipo, k, mk:dd.mk, n:0, ingresos:0, costes:0, fijos:0, neto:0, dias:0}; out.push(b); } b.n+=dd.n; b.ingresos+=dd.ingresos; b.costes+=dd.costes; b.fijos+=dd.fijos; b.neto+=dd.neto; b.dias++; }); return out; };
+  const lunes = ds => { const d = new Date(ds+"T12:00:00"); d.setDate(d.getDate()-((d.getDay()+6)%7)); return dayStr(d); };
+  const per = agrupar("mes", dd => dd.mk).map(b => ({...b, mk:b.k}));
+  const semanas = agrupar("semana", dd => lunes(dd.k));
+  const buckets = rent.gran==="mes" ? per : rent.gran==="semana" ? semanas : days;
+  const months = per.map(b=>b.k);
   const sum = k => rows.reduce((a,r)=>a+r[k],0);
   const T = { n:rows.length, ingresos:sum("ingreso"), costes:sum("costeSinHoras"), costeFull:sum("coste"), horas:sum("horas"), costeHoras:sum("costeHoras"), costeDiag:sum("costeDiag"), costeMat:sum("costeMat"), fijos:per.reduce((a,m)=>a+m.fijos,0), meses:months.length };
   T.bruto = T.ingresos - T.costes; T.neto = T.bruto - T.fijos; T.brutoFull = T.ingresos - T.costeFull; T.brutoMat = T.ingresos - T.costeMat;
   const mkHoy = dayStr(new Date()).slice(0,7);
   T.fijoMes = gastos.filter(g=>g.tipo!=="puntual" && (!g.desde || g.desde.slice(0,7)<=mkHoy) && (!g.hasta || g.hasta.slice(0,7)>=mkHoy)).reduce((a,g)=>a+gastoMensual(g),0);
   T.costeDia = T.fijoMes/diasLab();
-  return {rows, per, T};
+  return {rows, per, days, buckets, T};
 }
 function renderRent(){
   if(!isAdmin) return;
@@ -1682,7 +1699,8 @@ function renderRent(){
 function renderRentNums(){
   if(!isAdmin) return;
   if(rent.preset!=="custom"){ [rent.from, rent.to] = presetRange(rent.preset); $("rDesde").value = rent.from; $("rHasta").value = rent.to; }
-  const {rows, per, T} = rentCalc(); rentRows = rows;
+  const {rows, per, buckets, T} = rentCalc(); rentRows = rows;
+  $("rGran").querySelectorAll("[data-gran]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.gran===rent.gran)));
   const cls = v => v<0 ? "neg" : v>0 ? "pos" : "";
   const tiles = [
     {k:"Ingresos (sin IVA)", v:eur(T.ingresos), sub:`${T.n} presupuesto${T.n===1?"":"s"}${T.n?` · ticket medio ${eur(T.ingresos/T.n)}`:""}`},
@@ -1694,7 +1712,7 @@ function renderRentNums(){
   ];
   $("rStrip").innerHTML = tiles.map(t=>`<div class="tile"><div class="eyebrow">${esc(t.k)}</div><div class="v ${t.c||""}">${esc(t.v)}</div><div class="sub">${esc(t.sub)}</div></div>`).join("");
   $("rLegend").innerHTML = `<span><i style="background:var(--s1)"></i>Ingresos</span><span><i style="background:var(--s2)"></i>Costes directos</span><span><i style="background:var(--s3)"></i>Gastos fijos</span>`;
-  drawRentChart(per);
+  drawRentChart(buckets);
   // Tabla mensual (los mismos datos de la gráfica)
   $("rMeses").innerHTML = `<thead><tr><th>Mes</th><th class="r">Presup.</th><th class="r">Ingresos</th><th class="r">Costes directos</th><th class="r">Gastos fijos</th><th class="r">Beneficio neto</th></tr></thead><tbody>${per.map(m=>`<tr><td>${esc(mesLabel(m.mk))}</td><td class="r">${m.n}</td><td class="r">${eur(m.ingresos)}</td><td class="r">${eur(m.costes)}</td><td class="r">${eur(m.fijos)}</td><td class="r ${cls(m.neto)}">${eur(m.neto)}</td></tr>`).join("")}</tbody><tfoot><tr><td>Total</td><td class="r">${T.n}</td><td class="r">${eur(T.ingresos)}</td><td class="r">${eur(T.costes)}</td><td class="r">${eur(T.fijos)}</td><td class="r ${cls(T.neto)}">${eur(T.neto)}</td></tr></tfoot>`;
   // Tabla de presupuestos aprobados
@@ -1738,7 +1756,7 @@ function drawRentChart(per){
   if(!per.length || !per.some(m => m.ingresos || m.costes || m.fijos)){ host.innerHTML = `<div class="empty">Sin presupuestos aprobados ni gastos en este periodo.</div>`; return; }
   const W = Math.max(300, Math.floor(host.clientWidth || 640)); const mL = 54, mR = 8; const pw = W-mL-mR;
   const top = 26, hA = 170, gap = 56, hB = 110, bot = 40; const H = top+hA+gap+hB+bot; const yB0 = top+hA+gap;
-  const band = pw/per.length; const bw = Math.max(2, Math.min(18, (band-8)/2 - 1)); const bwN = Math.max(3, Math.min(24, band-10));
+  const band = pw/per.length; const bw = Math.max(1.2, Math.min(18, (band-8)/2 - 1)); const bwN = Math.max(1.5, Math.min(24, band-10)); const sep = band>=8 ? 1 : 0.4;
   const A = niceTicks(0, Math.max(1, ...per.map(m=>Math.max(m.ingresos, m.costes+m.fijos))), 4);
   const B = niceTicks(Math.min(0, ...per.map(m=>m.neto)), Math.max(0, ...per.map(m=>m.neto), 1), 3);
   const yA = v => top + hA - (v-A.min)/(A.max-A.min)*hA;
@@ -1748,23 +1766,23 @@ function drawRentChart(per){
   g += `<text class="ptitle" x="${mL}" y="12">Ingresos y gastos · € sin IVA</text><text class="ptitle" x="${mL}" y="${yB0-22}">Beneficio neto</text>`;
   A.t.forEach(v => { g += `<line class="${v===0?"axis":"grid"}" x1="${mL}" x2="${W-mR}" y1="${f1(yA(v))}" y2="${f1(yA(v))}"/><text class="tick" x="${mL-6}" y="${f1(yA(v)+3.5)}" text-anchor="end">${esc(eur0(v))}</text>`; });
   B.t.forEach(v => { g += `<line class="${v===0?"axis":"grid"}" x1="${mL}" x2="${W-mR}" y1="${f1(yB(v))}" y2="${f1(yB(v))}"/><text class="tick" x="${mL-6}" y="${f1(yB(v)+3.5)}" text-anchor="end">${esc(eur0(v))}</text>`; });
-  const every = Math.ceil(per.length/Math.max(1, Math.floor(pw/52)));
-  const iMax = per.reduce((a,m,i)=>m.neto>per[a].neto?i:a,0), iMin = per.reduce((a,m,i)=>m.neto<per[a].neto?i:a,0);
+  const every = Math.ceil(per.length/Math.max(1, Math.floor(pw/56)));
+  const iMax = per.reduce((a,m,i)=>m.neto>per[a].neto?i:a,0), iMin = per.reduce((a,m,i)=>m.neto<per[a].neto?i:a,0); let iLast = -1e9;
   per.forEach((m,i) => {
     const cx = mL + band*i + band/2; const y0 = yA(0);
-    if(m.ingresos>0) g += `<path d="${colPath(cx-bw-1, y0, yA(m.ingresos), bw)}" fill="var(--s1)"/>`;
-    const xg = cx+1; const hasF = m.fijos>0, hasC = m.costes>0;
+    if(m.ingresos>0) g += `<path d="${colPath(cx-bw-sep, y0, yA(m.ingresos), bw)}" fill="var(--s1)"/>`;
+    const xg = cx+sep; const hasF = m.fijos>0, hasC = m.costes>0;
     if(hasC){ const yt = yA(m.costes); g += hasF ? `<rect x="${f1(xg)}" y="${f1(yt)}" width="${f1(bw)}" height="${f1(Math.max(0,y0-yt))}" fill="var(--s2)"/>` : `<path d="${colPath(xg, y0, yt, bw)}" fill="var(--s2)"/>`; }
     if(hasF){ const yb = yA(m.costes) - (hasC ? 2 : 0); const yt = yA(m.costes+m.fijos); if(yb-yt>0.5) g += `<path d="${colPath(xg, yb, yt, bw)}" fill="var(--s3)"/>`; }
     if(m.neto!==0){ const yz = yB(0), yn = yB(m.neto); g += `<path d="${colPath(cx-bwN/2, yz, yn, bwN)}" fill="var(--${m.neto<0?"crit":"ok"})"/>`;
-      if(per.length<=8 || i===iMax || i===iMin || i===per.length-1) g += `<text class="val" x="${f1(cx)}" y="${f1(m.neto<0 ? yn+12 : yn-5)}" text-anchor="middle">${esc(eur0(m.neto))}</text>`; }
-    if(i%every===0) g += `<text x="${f1(cx)}" y="${H-8}" text-anchor="middle">${esc(mesLabel(m.mk))}</text>`;
+      if(per.length<=8 || (m.neto>0 && i===iMax) || (m.neto<0 && i===iMin)) g += `<text class="val" x="${f1(cx)}" y="${f1(m.neto<0 ? yn+12 : yn-5)}" text-anchor="middle">${esc(eur0(m.neto))}</text>`; }
+    if(i%every===0 || (every>1 && i===per.length-1 && per.length-1-iLast>=every/2)) { if(i%every===0) iLast = i; g += `<text x="${f1(cx)}" y="${H-8}" text-anchor="middle">${esc(bucketShort(m))}</text>`; }
   });
-  per.forEach((m,i) => { g += `<rect class="band" data-i="${i}" tabindex="0" role="img" aria-label="${esc(`${mesLabel(m.mk)}: ingresos ${eur(m.ingresos)}, costes directos ${eur(m.costes)}, gastos fijos ${eur(m.fijos)}, beneficio neto ${eur(m.neto)}`)}" x="${f1(mL+band*i)}" y="${top-6}" width="${f1(band)}" height="${H-top-bot+20}"/>`; });
+  per.forEach((m,i) => { g += `<rect class="band" data-i="${i}" tabindex="0" role="img" aria-label="${esc(`${bucketLabel(m)}: ingresos ${eur(m.ingresos)}, costes directos ${eur(m.costes)}, gastos fijos ${eur(m.fijos)}, beneficio neto ${eur(m.neto)}`)}" x="${f1(mL+band*i)}" y="${top-6}" width="${f1(band)}" height="${H-top-bot+20}"/>`; });
   host.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="group" aria-label="Evolución mensual de ingresos, gastos y beneficio neto">${g}</svg>`;
   const tip = document.createElement("div"); tip.className = "ctip"; tip.hidden = true; host.appendChild(tip);
   const show = i => { const m = per[i]; tip.textContent = "";
-    const h = document.createElement("div"); h.className = "h"; h.textContent = `${mesLabel(m.mk)} · ${m.n} presupuesto${m.n===1?"":"s"}`; tip.appendChild(h);
+    const h = document.createElement("div"); h.className = "h"; h.textContent = `${bucketLabel(m)} · ${m.n} presupuesto${m.n===1?"":"s"}`; tip.appendChild(h);
     [["var(--s1)","Ingresos",m.ingresos],["var(--s2)","Costes directos",m.costes],["var(--s3)","Gastos fijos",m.fijos],[m.neto<0?"var(--crit)":"var(--ok)","Beneficio neto",m.neto,true]].forEach(([c,lab,v,net]) => { const r = document.createElement("div"); r.className = "r"+(net?" net":""); const k = document.createElement("i"); k.style.background = c; const b = document.createElement("b"); b.textContent = eur(v); const s = document.createElement("span"); s.textContent = lab; r.append(k,b,s); tip.appendChild(r); });
     tip.hidden = false; const cx = mL + band*i + band/2; const tw = tip.offsetWidth; let left = cx + 12; if(left + tw > W) left = cx - 12 - tw; tip.style.left = Math.max(0,left)+"px"; tip.style.top = "8px"; };
   host.querySelectorAll(".band").forEach(b => { const i = +b.dataset.i; b.addEventListener("pointerenter", () => show(i)); b.addEventListener("pointerleave", () => { tip.hidden = true; }); b.addEventListener("focus", () => show(i)); b.addEventListener("blur", () => { tip.hidden = true; }); });
@@ -1795,9 +1813,10 @@ $("rGuardarGastos").addEventListener("click", async () => {
     renderGastos(); renderRentNums(); toast("Gastos guardados");
   }catch(err){ toast("No se pudo guardar: "+(err.message||err.code)); }
 });
-$("rPresets").querySelectorAll("[data-preset]").forEach(b => b.addEventListener("click", () => { rent.preset = b.dataset.preset; renderRent(); }));
+$("rPresets").querySelectorAll("[data-preset]").forEach(b => b.addEventListener("click", () => { rent.preset = b.dataset.preset; const [f,t] = presetRange(rent.preset); const nd = (new Date(t)-new Date(f))/864e5; rent.gran = nd>120 ? "semana" : "dia"; renderRent(); }));
 ["rDesde","rHasta"].forEach(id => $(id).addEventListener("change", () => { rent.preset = "custom"; rent.from = $("rDesde").value; rent.to = $("rHasta").value; $("rPresets").querySelectorAll("[data-preset]").forEach(b => b.setAttribute("aria-pressed","false")); renderRentNums(); }));
 $("rEstado").addEventListener("change", renderRentNums);
+$("rGran").querySelectorAll("[data-gran]").forEach(b => b.addEventListener("click", () => { rent.gran = b.dataset.gran; renderRentNums(); }));
 $("rCsv").addEventListener("click", async () => {
   if(!downloads || !rentRows.length) return;
   const dec = n => (Math.round(n*100)/100).toFixed(2).replace(".",",");
