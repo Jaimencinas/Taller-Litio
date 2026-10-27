@@ -433,6 +433,15 @@ body[data-auth="out"] .top, body[data-auth="out"] main{visibility:hidden}
         <input type="text" id="fBuscar" placeholder="Buscar cliente, referencia, batería…">
         <select id="fEstado"><option value="">Todos los estados</option></select>
         <select id="fAlmacen"><option value="">Todos los almacenes</option></select>
+        <select id="fOrden" title="Ordenar la lista">
+          <option value="actividad">Orden: última actividad</option>
+          <option value="refdesc">Referencia: mayor a menor</option>
+          <option value="refasc">Referencia: menor a mayor</option>
+          <option value="fechadesc">Entrada: más reciente primero</option>
+          <option value="fechaasc">Entrada: más antigua primero</option>
+          <option value="importe">Importe presupuesto: mayor a menor</option>
+          <option value="cliente">Cliente: A → Z</option>
+        </select>
       </div>
       <div class="list" id="lista"></div>
     </div>
@@ -528,7 +537,9 @@ body[data-auth="out"] .top, body[data-auth="out"] main{visibility:hidden}
           <label class="f">Cliente<input type="text" id="qCliente"></label>
           <label class="f">NIF / CIF<input type="text" id="qNif"></label>
           <label class="f span2">Dirección del cliente<input type="text" id="qDir" placeholder="Calle, CP, ciudad"></label>
-          <label class="f span2">Email<input type="text" id="qEmail"></label>
+          <label class="f">Email<input type="text" id="qEmail"></label>
+          <label class="f">Fecha del presupuesto <span class="muted">sale en el PDF; de ahí cuenta la validez</span><input type="date" id="qFecha"></label>
+          <label class="f admin-only span2" id="qFechaAprobWrap" hidden>Fecha de aprobación <span class="muted">la que usa Rentabilidad; puedes cambiarla aunque esté aprobado o facturado</span><input type="date" id="qFechaAprob"></label>
         </div>
 
         <!-- Productos del presupuesto: cada uno con sus celdas, BMS, horas, diagnosis… -->
@@ -868,7 +879,12 @@ $("kPresets").querySelectorAll("[data-preset]").forEach(b => b.addEventListener(
 function renderLista(){
   const q = slug($("fBuscar").value), fe=$("fEstado").value, fa=$("fAlmacen").value;
   let rows = encargos.filter(e => (!fe || e.estado===fe) && (!fa || e.almacen===fa) && (!q || slug(e.cliente+e.ref+e.bateria+e.desc).includes(q)));
-  rows.sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
+  const refNum = e => { const m = /^L(\d{2})-(\d+)$/.exec(e.ref||""); return m ? (+m[1])*100000 + (+m[2]) : 0; };
+  const importe = e => Math.max(0, ...presupuestos.filter(p=>p.encargoId===e.id).map(p=>+p.total||0));
+  const fechaE = e => e.fecha || (e.createdAt ? dayStr(new Date(e.createdAt)) : "");
+  const orden = $("fOrden").value; try{ localStorage.setItem("litio.orden", orden); }catch{}
+  const cmp = { refdesc:(a,b)=>refNum(b)-refNum(a), refasc:(a,b)=>refNum(a)-refNum(b), fechadesc:(a,b)=>fechaE(b).localeCompare(fechaE(a)) || (b.createdAt||0)-(a.createdAt||0), fechaasc:(a,b)=>fechaE(a).localeCompare(fechaE(b)) || (a.createdAt||0)-(b.createdAt||0), importe:(a,b)=>importe(b)-importe(a) || (b.updatedAt||0)-(a.updatedAt||0), cliente:(a,b)=>String(a.cliente||"").localeCompare(String(b.cliente||""),"es",{sensitivity:"base"}) }[orden] || ((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
+  rows.sort(cmp);
   if(!rows.length){ $("lista").innerHTML = `<div class="empty">${encargos.length?"Ningún encargo coincide con el filtro.":"Aún no hay encargos. Crea el primero."}</div>`; return; }
   $("lista").innerHTML = rows.map(e => `
     <button class="row" data-id="${esc(e.id)}" aria-current="${e.id===selId}">
@@ -878,7 +894,8 @@ function renderLista(){
     </button>`).join("");
   $("lista").querySelectorAll(".row").forEach(r => r.addEventListener("click", () => selectEncargo(r.dataset.id)));
 }
-["fBuscar","fEstado","fAlmacen"].forEach(id => $(id).addEventListener("input", renderLista));
+["fBuscar","fEstado","fAlmacen","fOrden"].forEach(id => $(id).addEventListener("input", renderLista));
+try{ const o = localStorage.getItem("litio.orden"); if(o && [...$("fOrden").options].some(x=>x.value===o)) $("fOrden").value = o; }catch{}
 
 // ---------- Detail ----------
 function selectEncargo(id){
@@ -1248,7 +1265,7 @@ function renderCalc(){
   } else pb.hidden = true;
   return {q,r};
 }
-["qCosteDiag","qCosteCerrado","qTrabajos","qCeldaNombre","qCeldaPrecio","qNBms","qBmsNombre","qBmsPrecio","qModo","qDescCliente","qPrecioCerrado","qCosteCelda","qCosteBms","qEncargo","qCliente","qNif","qDir","qEmail","qBateria","qCelda","qNCeldas","qBms","qHoras","qDiag","qDto","qExtras","qNotas"].forEach(id => $(id).addEventListener("input", renderCalc));
+["qFecha","qFechaAprob","qCosteDiag","qCosteCerrado","qTrabajos","qCeldaNombre","qCeldaPrecio","qNBms","qBmsNombre","qBmsPrecio","qModo","qDescCliente","qPrecioCerrado","qCosteCelda","qCosteBms","qEncargo","qCliente","qNif","qDir","qEmail","qBateria","qCelda","qNCeldas","qBms","qHoras","qDiag","qDto","qExtras","qNotas"].forEach(id => $(id).addEventListener("input", renderCalc));
 $("qEncargo").addEventListener("change", () => { const e=encargos.find(x=>x.id===$("qEncargo").value); if(e){ $("qCliente").value=e.cliente; const bat=[e.bateria,e.v?e.v+"V":"",e.ah?e.ah+"Ah":""].filter(Boolean).join(" "); if(curProd===0) $("qBateria").value=bat; else prods[0].bateria=bat; } renderCalc(); });
 
 function nextNumPres(){
@@ -1260,12 +1277,16 @@ function setPresEstado(estado){
   const ch=$("qEstadoChip"); ch.textContent=estado; ch.className="chip "+estado; $("holdedBox").hidden = !(estado==="aprobado"||estado==="facturado");
   // Descarga directa del PDF en cuanto el presupuesto está marcado como enviado (y en adelante)
   $("qDescargar").hidden = !(curPresId && ["enviado","aprobado","facturado"].includes(estado));
+  $("qFechaAprobWrap").hidden = !(curPresId && (estado==="aprobado"||estado==="facturado"));
 }
+// Fecha "AAAA-MM-DD" del campo → milisegundos (mediodía local). Si la fecha coincide con la guardada, conserva la hora original.
+function fechaMs(campo, prevMs){ const v = $(campo).value; if(!v) return prevMs||null; if(prevMs && dayStr(new Date(prevMs))===v) return prevMs; return new Date(v+"T12:00:00").getTime(); }
 function newPres(){
   curPresId = null; $("qTitle").textContent = "Nuevo presupuesto";
   prods = [blankProd()]; curProd = 0; writeProd(prods[0]);
   $("qEncargo").value = selId||""; $("qEncargo").dispatchEvent(new Event("change"));
   if(!selId){ $("qCliente").value=""; $("qBateria").value=""; }
+  $("qFecha").value = dayStr(new Date()); $("qFechaAprob").value = "";
   $("qNif").value=""; $("qDir").value=""; $("qEmail").value="";
   $("qDto").value=0; $("qNotas").value=""; $("hNumFactura").value=""; $("qModo").value="linea";
   setPresEstado("borrador"); $("qDelWrap").innerHTML=""; renderProdActs(); renderCalc(); renderListaPres();
@@ -1277,6 +1298,7 @@ function openPres(id){
   curPresId = id; $("qTitle").textContent = p.num;
   $("qEncargo").value = p.encargoId||""; $("qCliente").value=p.cliente||""; $("qNif").value=p.nif||""; $("qDir").value=p.dir||""; $("qEmail").value=p.email||"";
   $("qDto").value=p.dto||0; $("qNotas").value=p.notas||""; $("hNumFactura").value=p.numFactura||""; $("qModo").value=p.modo||"linea";
+  $("qFecha").value = dayStr(new Date(p.createdAt||Date.now())); $("qFechaAprob").value = p.aprobadoAt ? dayStr(new Date(p.aprobadoAt)) : "";
   prods = prodsOf(p).map((x,i) => { const {base, ...rest} = structuredClone(x); return {...blankProd(), ...rest, interno:{costeCelda:x.interno?.costeCelda??null, costeBms:x.interno?.costeBms??null, costeDiag:x.interno?.costeDiag??null, costeCerrado:x.interno?.costeCerrado??null}, _desc: !!(x.descCliente && x.descCliente!==descAutoProd(x, p.encargoId, i))}; });
   curProd = 0; writeProd(prods[0]);
   setPresEstado(p.estado||"borrador");
@@ -1289,16 +1311,27 @@ async function savePres(estado){
   const {q,r} = renderCalc();
   const p = {...presPayload(q, r), interno:q.productos[0].interno, estado: estado || (presupuestos.find(x=>x.id===curPresId)?.estado) || "borrador", updatedAt:Date.now(), numFactura:$("hNumFactura").value.trim()||null};
   if(!p.cliente && !p.encargoId){ toast("Indica el cliente o asocia un encargo"); return null; }
+  const prevP = presupuestos.find(x=>x.id===curPresId);
+  // Fechas editables: la del presupuesto (PDF y validez) y, para el administrador, la de aprobación (Rentabilidad)
+  if(curPresId && prevP){ p.createdAt = fechaMs("qFecha", prevP.createdAt) || prevP.createdAt; }
+  let notaFechaAprob = null;
+  if(isAdmin && curPresId && prevP && (p.estado==="aprobado"||p.estado==="facturado") && $("qFechaAprob").value){
+    const nuevo = fechaMs("qFechaAprob", prevP.aprobadoAt); p.aprobadoAt = nuevo;
+    if(dayStr(presFecha(prevP))!==dayStr(new Date(nuevo))) notaFechaAprob = `Fecha de aprobación del presupuesto ${prevP.num||""} cambiada a ${new Date(nuevo).toLocaleDateString("es-ES")}`;
+  }
   try{
     if(curPresId){
       await db.doc("presupuestos/"+curPresId).update(p); const loc = presupuestos.find(x=>x.id===curPresId); if(loc) Object.assign(loc, p);
     } else {
-      p.num = nextNumPres(); p.createdAt = Date.now(); p.creadoPor = me.id||null;
+      p.num = nextNumPres(); p.createdAt = fechaMs("qFecha", null) || Date.now(); p.creadoPor = me.id||null;
       if(demoMode()){ curPresId="p"+Math.random().toString(36).slice(2,8); presupuestos.push({id:curPresId,...p}); }
       else { const ref = await db.collection("presupuestos").add(p); curPresId = ref.id; if(!presupuestos.some(x=>x.id===curPresId)) presupuestos.push({id:curPresId,...p}); }
     }
     $("qTitle").textContent = presupuestos.find(x=>x.id===curPresId)?.num || $("qTitle").textContent;
     setPresEstado(p.estado); renderListaPres(); renderHolded();
+    { const sv = presupuestos.find(x=>x.id===curPresId); if(sv){ $("qFecha").value = dayStr(new Date(sv.createdAt||Date.now())); $("qFechaAprob").value = sv.aprobadoAt ? dayStr(new Date(sv.aprobadoAt)) : ""; } }
+    if(notaFechaAprob && p.encargoId && encargos.some(x=>x.id===p.encargoId)){ const prev = selId; selId = p.encargoId; await addNota({tipo:"sistema", texto:notaFechaAprob}); selId = prev; }
+    if(isAdmin && $("view-rentabilidad")) renderRentNums();
     if(p.encargoId && estado){
       const mapa = {enviado:"Esperando aprobación", aprobado:"Aprobado", rechazado:"Rechazado"};
       const e = encargos.find(x=>x.id===p.encargoId);
@@ -1367,7 +1400,7 @@ function docData(){
   const p = saved ? {...saved, ...pl} : {...pl, num:"BORRADOR", estado:"borrador", createdAt:Date.now()};
   const e = encargos.find(x=>x.id===p.encargoId);
   const co = {...DEF_EMPRESA, ...(config.empresa||{})};
-  const fecha = new Date(p.createdAt||Date.now());
+  const fecha = $("qFecha").value ? new Date($("qFecha").value+"T12:00:00") : new Date(p.createdAt||Date.now());
   const validez = +co.validez||15; const hasta = new Date(fecha.getTime()+validez*864e5);
   const dISO = d => d.toISOString().slice(0,10); const dES = d => d.toLocaleDateString("es-ES");
   const bancos = String(co.bancos||"").split("\n").map(l=>l.split(";").map(x=>x.trim())).filter(b=>b[0]);
