@@ -3,12 +3,16 @@
 //   POST /.netlify/functions/api  {op:"set"|"update"|"delete"|"add", path, data|patch, files}
 //   POST /.netlify/functions/api  {op:"setup"}         → crea las tablas en Airtable y carga las semillas (solo admin)
 // Rutas de documento (las mismas que usaba la página):
-//   encargos/{id} · notas/{encargoId} · presupuestos/{id} · config/{clave} · config/costes/analitica/{presId}
+//   encargos/{id} · notas/{encargoId} · presupuestos/{id} · tiempos/{id} · config/{clave} · config/costes/analitica/{presId}
 // Claves de config: general, tarifas, costes (solo admin), gastos (solo admin: gastos fijos para la rentabilidad).
 const { json, sessionFrom, configured, at, listAll, findByField, createRec, updateRec, deleteRec, uploadAttachment, BASE } = require("./_lib");
 const SEED = require("./_seed.json");
 
-const T = { enc: "Encargos", notas: "Notas", pres: "Presupuestos", config: "Config" };
+const T = { enc: "Encargos", notas: "Notas", pres: "Presupuestos", config: "Config", tiempos: "Tiempos" };
+// Tiempos de taller: un registro por fase/día de un encargo (minutos)
+const FASES = [["diag", "Diagnóstico (min)"], ["docu", "Documentación (min)"], ["desm", "Desmontaje (min)"], ["mont", "Montaje (min)"], ["conex", "Conexión (min)"], ["sold", "Soldaduras (min)"], ["caja", "Meter en caja (min)"]];
+function tiempoToDoc(r) { const f = r.fields; const d = { id: f["ID"], encargoId: f["Encargo"] || null, ref: f["Ref"] || "", fecha: f["Fecha"] || "", obs: f["Observaciones"] || "", autor: f["Autor"] || null, autorNombre: f["Autor nombre"] || "", createdAt: num(f["Creado"]), updatedAt: num(f["Actualizado"]) }; FASES.forEach(([k, n]) => { d[k] = num(f[n]) || 0; }); d.total = FASES.reduce((a, [k]) => a + d[k], 0); return d; }
+function tiempoFields(d) { const o = { "ID": d.id, "Encargo": d.encargoId || "", "Ref": d.ref || "", "Fecha": d.fecha || null, "Observaciones": d.obs || "", "Autor": d.autor || "", "Autor nombre": d.autorNombre || "", "Creado": num(d.createdAt), "Actualizado": num(d.updatedAt) }; let t = 0; FASES.forEach(([k, n]) => { const v = Math.max(0, Math.round(+d[k] || 0)); o[n] = v; t += v; }); o["Total (min)"] = t; return o; }
 const ADMIN_PRES_FIELDS = ["Coste", "Beneficio", "Margen %", "Interno"];
 const ADMIN_CONFIG = new Set(["costes", "gastos"]); // claves de Config que un empleado nunca recibe
 const newId = () => Math.random().toString(36).slice(2, 12) + Date.now().toString(36);
@@ -50,14 +54,14 @@ const analFields = (d) => ({ "Coste": num(d.coste), "Beneficio": num(d.beneficio
 // ---------- lectura del estado ----------
 async function readState(admin) {
   const adj = {};
-  const [enc, notas, pres, cfg] = await Promise.all([listAll(T.enc), listAll(T.notas), listAll(T.pres), listAll(T.config)]);
+  const [enc, notas, pres, cfg, tiem] = await Promise.all([listAll(T.enc), listAll(T.notas), listAll(T.pres), listAll(T.config), listAll(T.tiempos).catch((e) => { if (e.status === 404) return []; throw e; })]);
   const notasMap = {};
   notas.forEach((r) => { const e = r.fields["Encargo"]; if (!e) return; (notasMap[e] = notasMap[e] || { encargoId: e, items: [] }).items.push(notaToItem(r, adj)); });
   const config = {};
   cfg.forEach((r) => { const k = r.fields["Clave"]; if (!k) return; if (ADMIN_CONFIG.has(k) && !admin) return; config[k] = parseJSON(r.fields["JSON"], {}); });
   const analitica = {};
   if (admin) pres.forEach((r) => { if (r.fields["Coste"] != null) analitica[r.fields["ID"]] = analToDoc(r); });
-  return { encargos: enc.map((r) => encToDoc(r, adj)).filter((d) => d.id), notas: notasMap, presupuestos: pres.map((r) => presToDoc(r, admin)).filter((d) => d.id), config, analitica, adjuntos: adj, ts: Date.now() };
+  return { encargos: enc.map((r) => encToDoc(r, adj)).filter((d) => d.id), notas: notasMap, presupuestos: pres.map((r) => presToDoc(r, admin)).filter((d) => d.id), config, analitica, tiempos: tiem.map(tiempoToDoc).filter((d) => d.id), adjuntos: adj, ts: Date.now() };
 }
 
 // ---------- rutas ----------
@@ -67,6 +71,8 @@ function route(path) {
   if (s.length === 2 && s[0] === "encargos") return { kind: "encargo", id: s[1] };
   if (s.length === 2 && s[0] === "notas") return { kind: "notas", id: s[1] };
   if (s.length === 2 && s[0] === "presupuestos") return { kind: "pres", id: s[1] };
+  if (s.length === 2 && s[0] === "tiempos") return { kind: "tiempo", id: s[1] };
+  if (s.length === 1 && s[0] === "tiempos") return { kind: "tiempo", id: null };
   if (s.length === 2 && s[0] === "config") return { kind: "config", id: s[1] };
   if (s.length === 1 && s[0] === "encargos") return { kind: "encargo", id: null };
   if (s.length === 1 && s[0] === "presupuestos") return { kind: "pres", id: null };
@@ -193,6 +199,7 @@ async function readDoc(rt, admin) {
   if (rt.kind === "encargo") { const r = await findByField(T.enc, "ID", rt.id); return { doc: r ? encToDoc(r, adj) : null, adjuntos: adj }; }
   if (rt.kind === "notas") { const rs = await listAll(T.notas, { filterByFormula: `{Encargo}='${rt.id}'` }); return { doc: rs.length ? { encargoId: rt.id, items: rs.map((r) => notaToItem(r, adj)) } : null, adjuntos: adj }; }
   if (rt.kind === "pres") { const r = await findByField(T.pres, "ID", rt.id); return { doc: r ? presToDoc(r, admin) : null }; }
+  if (rt.kind === "tiempo") { const r = await findByField(T.tiempos, "ID", rt.id); return { doc: r ? tiempoToDoc(r) : null }; }
   if (rt.kind === "config") { if (ADMIN_CONFIG.has(rt.id) && !admin) return { doc: null }; const r = await findByField(T.config, "Clave", rt.id); return { doc: r ? parseJSON(r.fields["JSON"], {}) : null }; }
   if (rt.kind === "analitica") { if (!admin) return { doc: null }; const r = await findByField(T.pres, "ID", rt.id); return { doc: r && r.fields["Coste"] != null ? analToDoc(r) : null }; }
   return { doc: null };
@@ -206,6 +213,7 @@ const SCHEMA = [
   { name: T.notas, fields: [F("ID", "singleLineText"), F("Encargo", "singleLineText"), F("Fecha", "number", int), F("Tipo", "singleLineText"), F("Texto", "multilineText"), F("Autor", "singleLineText"), F("Autor nombre", "singleLineText"), F("Estado", "singleLineText"), F("Almacén", "singleLineText"), F("Adjunto", "multipleAttachments"), F("Mime", "singleLineText")] },
   { name: T.pres, fields: [F("ID", "singleLineText"), F("Número", "singleLineText"), F("Encargo", "singleLineText"), F("Cliente", "singleLineText"), F("NIF", "singleLineText"), F("Dirección", "singleLineText"), F("Email", "email"), F("Batería", "singleLineText"), F("Estado", "singleLineText"), F("Base", "number", money), F("IVA", "number", money), F("Total", "number", money), F("Nº factura", "singleLineText"), F("Datos", "multilineText"), F("Coste", "number", money), F("Beneficio", "number", money), F("Margen %", "number", { precision: 1 }), F("Interno", "multilineText")] },
   { name: T.config, fields: [F("Clave", "singleLineText"), F("JSON", "multilineText")] },
+  { name: T.tiempos, fields: [F("ID", "singleLineText"), F("Encargo", "singleLineText"), F("Ref", "singleLineText"), F("Fecha", "date", { dateFormat: { name: "iso" } }), ...FASES.map(([, n]) => F(n, "number", int)), F("Total (min)", "number", int), F("Observaciones", "multilineText"), F("Autor", "singleLineText"), F("Autor nombre", "singleLineText"), F("Creado", "number", int), F("Actualizado", "number", int)] },
 ];
 async function setup() {
   const meta = await at("GET", `meta/bases/${BASE()}/tables`);
@@ -251,6 +259,7 @@ exports.handler = async (event) => {
       if (rt.kind === "encargo") { const r = await findByField(T.enc, "ID", rt.id); if (r) await deleteRec(T.enc, r.id); }
       else if (rt.kind === "notas") { for (const r of await listAll(T.notas, { filterByFormula: `{Encargo}='${rt.id}'` })) await deleteRec(T.notas, r.id); }
       else if (rt.kind === "pres") { const r = await findByField(T.pres, "ID", rt.id); if (r) await deleteRec(T.pres, r.id); }
+      else if (rt.kind === "tiempo") { const r = await findByField(T.tiempos, "ID", rt.id); if (r) await deleteRec(T.tiempos, r.id); }
       else if (rt.kind === "config") { const r = await findByField(T.config, "Clave", rt.id); if (r) await deleteRec(T.config, r.id); }
       return json(200, { ok: true });
     }
@@ -265,6 +274,7 @@ exports.handler = async (event) => {
     if (rt.kind === "encargo") res = await writeEncargo(id, data, files, sess);
     else if (rt.kind === "notas") res = await writeNotas(id, data, files);
     else if (rt.kind === "pres") res = await writePres(id, data, admin);
+    else if (rt.kind === "tiempo") { const rec = await findByField(T.tiempos, "ID", id); const fields = tiempoFields({ ...data, id, autor: data.autor || (sess && sess.id) || "", autorNombre: data.autorNombre || (sess && sess.name) || "" }); const r = rec ? await updateRec(T.tiempos, rec.id, fields) : await createRec(T.tiempos, fields); res = { doc: tiempoToDoc(r) }; }
     else if (rt.kind === "config") res = await writeConfig(id, data);
     else if (rt.kind === "analitica") res = await writeAnalitica(id, data);
     return json(200, { id, ...res });

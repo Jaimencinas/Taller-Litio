@@ -10,7 +10,7 @@
   try { session = JSON.parse(localStorage.getItem(LS) || "null"); } catch {}
 
   // ---------- estado en memoria ----------
-  let state = { encargos: [], notas: {}, presupuestos: [], config: {}, analitica: {}, adjuntos: {}, ts: 0 };
+  let state = { encargos: [], notas: {}, presupuestos: [], tiempos: [], config: {}, analitica: {}, adjuntos: {}, ts: 0 };
   const pendingFiles = new Map(); // "pending:x" -> {file, contentType, filename}
   const listeners = new Set();
   let pollTimer = null, loading = null;
@@ -36,12 +36,13 @@
   function parseDoc(path) {
     const s = path.split("/").filter(Boolean);
     if (s.length === 4 && s[0] === "config" && s[1] === "costes" && s[2] === "analitica") return { kind: "analitica", id: s[3] };
-    if (s.length === 2 && ["encargos", "notas", "presupuestos", "config"].includes(s[0])) return { kind: s[0], id: s[1] };
+    if (s.length === 2 && ["encargos", "notas", "presupuestos", "tiempos", "config"].includes(s[0])) return { kind: s[0], id: s[1] };
     throw new TypeError("Ruta no soportada: " + path);
   }
   function localDoc(rt) {
     if (rt.kind === "encargos") return state.encargos.find((e) => e.id === rt.id) || null;
     if (rt.kind === "presupuestos") return state.presupuestos.find((p) => p.id === rt.id) || null;
+    if (rt.kind === "tiempos") return (state.tiempos || []).find((p) => p.id === rt.id) || null;
     if (rt.kind === "notas") return state.notas[rt.id] || null;
     if (rt.kind === "config") return state.config[rt.id] || null;
     if (rt.kind === "analitica") return state.analitica[rt.id] || null;
@@ -52,6 +53,7 @@
     if (!doc) return;
     if (rt.kind === "encargos") { const i = state.encargos.findIndex((e) => e.id === rt.id); if (i >= 0) state.encargos[i] = doc; else state.encargos.push(doc); }
     else if (rt.kind === "presupuestos") { const i = state.presupuestos.findIndex((p) => p.id === rt.id); if (i >= 0) state.presupuestos[i] = doc; else state.presupuestos.push(doc); }
+    else if (rt.kind === "tiempos") { state.tiempos = state.tiempos || []; const i = state.tiempos.findIndex((p) => p.id === rt.id); if (i >= 0) state.tiempos[i] = doc; else state.tiempos.push(doc); }
     else if (rt.kind === "notas") state.notas[rt.id] = doc;
     else if (rt.kind === "config") state.config[rt.id] = doc;
     else if (rt.kind === "analitica") state.analitica[rt.id] = doc;
@@ -60,6 +62,7 @@
   function removeLocal(rt) {
     if (rt.kind === "encargos") state.encargos = state.encargos.filter((e) => e.id !== rt.id);
     else if (rt.kind === "presupuestos") state.presupuestos = state.presupuestos.filter((p) => p.id !== rt.id);
+    else if (rt.kind === "tiempos") state.tiempos = (state.tiempos || []).filter((p) => p.id !== rt.id);
     else if (rt.kind === "notas") delete state.notas[rt.id];
     else if (rt.kind === "config") delete state.config[rt.id];
     listeners.forEach((f) => { try { f(); } catch {} });
@@ -107,8 +110,8 @@
   }
   function colRef(path) {
     const kind = path.split("/").filter(Boolean)[0];
-    if (!["encargos", "presupuestos"].includes(kind)) throw new TypeError("Colección no soportada: " + path);
-    const list = () => (kind === "encargos" ? state.encargos : state.presupuestos);
+    if (!["encargos", "presupuestos", "tiempos"].includes(kind)) throw new TypeError("Colección no soportada: " + path);
+    const list = () => (kind === "encargos" ? state.encargos : kind === "tiempos" ? (state.tiempos || []) : state.presupuestos);
     const mk = (arr) => { const docs = arr.map((d) => snap(d.id, d)); return { docs, size: docs.length, empty: !docs.length, docChanges: () => docs.map((d, i) => ({ type: "added", doc: d, oldIndex: -1, newIndex: i })), metadata: { fromCache: false, hasPendingWrites: false } }; };
     const col = {
       path,

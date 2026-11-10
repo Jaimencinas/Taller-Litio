@@ -339,6 +339,17 @@ body[data-auth="out"] .top, body[data-auth="out"] main{visibility:hidden}
 .conv-k{display:flex;gap:18px;flex-wrap:wrap;margin-top:6px;font-size:13px}
 .conv-k b{font-family:var(--display);font-size:20px;font-weight:700;margin-right:4px}
 .conv-k b.ok{color:var(--ok)}.conv-k b.crit{color:var(--crit)}
+/* Tiempos de taller */
+.tcols{grid-template-columns:minmax(0,.9fr) minmax(0,1.3fr)}
+@media (max-width:900px){.tcols{grid-template-columns:minmax(0,1fr)}}
+.chk{display:inline-flex;gap:6px;align-items:center;font-size:13px;color:var(--ink-2);cursor:pointer}
+#tiLista .row .m .num{color:var(--ink-2)}
+.tiempos th,.tiempos td{padding:7px 8px;font-size:12.5px}
+.tiempos td.r,.tiempos th.r{text-align:right}
+.tiempos td.r{font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+.tiempos .iconbtn{margin-left:4px}
+#tiTodos{min-width:980px}#tiHist{min-width:760px}
+.tcomp .d b{font-weight:600}
 /* Rentabilidad */
 /* s1 ingresos (verde) · s2 costes directos (azul) · s3 gastos fijos (rojo) */
 :root{--s1:#1baf7a;--s2:#2a78d6;--s3:#e34948}
@@ -386,7 +397,7 @@ body[data-auth="out"] .top, body[data-auth="out"] main{visibility:hidden}
 .gasto .fechas label{display:inline-flex;align-items:center;gap:6px}
 .gasto .fechas input{width:auto}
 @media (max-width:420px){.gasto{grid-template-columns:minmax(0,1fr) 76px 98px 22px}}
-#rTabla,#rTablaMat{min-width:860px}#rMeses{min-width:500px}
+#rTabla{min-width:940px}#rTablaMat{min-width:860px}#rMeses{min-width:500px}
 .rtab .lnk{white-space:nowrap}
 @media (prefers-reduced-motion:no-preference){.row,.btn{transition:background .12s}}
 </style>
@@ -397,6 +408,7 @@ body[data-auth="out"] .top, body[data-auth="out"] main{visibility:hidden}
     <nav class="tabs" role="tablist">
       <button role="tab" aria-selected="true" data-view="encargos" id="tab-encargos">Encargos</button>
       <button role="tab" aria-selected="false" data-view="presupuestos" id="tab-presupuestos">Presupuestos</button>
+      <button role="tab" aria-selected="false" data-view="tiempos" id="tab-tiempos">Tiempos</button>
       <button role="tab" aria-selected="false" data-view="rentabilidad" id="tab-rentabilidad" class="admin-only">Rentabilidad</button>
       <button role="tab" aria-selected="false" data-view="tarifas" id="tab-tarifas" class="admin-only">Tarifas y almacenes</button>
     </nav>
@@ -618,6 +630,52 @@ body[data-auth="out"] .top, body[data-auth="out"] main{visibility:hidden}
 </section>
 
 <!-- ============ RENTABILIDAD (solo administrador) ============ -->
+<!-- ============ TIEMPOS DE TALLER ============ -->
+<section class="view" id="view-tiempos">
+  <div class="cols tcols">
+    <div class="panel">
+      <div class="panel-h"><h2>Encargos</h2><div class="toolbar"><label class="chk"><input type="checkbox" id="tiSoloAbiertos" checked> Solo abiertos</label></div></div>
+      <div class="filters"><input type="search" id="tiBuscar" placeholder="Buscar referencia, cliente o batería"></div>
+      <div class="list" id="tiLista"></div>
+    </div>
+    <div class="panel" id="tiDetalle">
+      <div class="panel-b" id="tiEmpty"><div class="empty">Elige un encargo para registrar el tiempo de taller.</div></div>
+      <div id="tiBody" hidden>
+        <div class="panel-h"><div><div class="eyebrow" id="tiRef"></div><h2 id="tiTitulo"></h2><div class="muted" id="tiSub"></div></div><div class="toolbar"><span class="chip" id="tiTotalChip"></span></div></div>
+        <div class="panel-b">
+          <div class="profit admin-only" id="tiCompara" hidden></div>
+          <div class="eyebrow" id="tiFormTitle">Nuevo registro</div>
+          <div class="grid g2" style="margin-top:6px">
+            <label class="f">Fecha<input type="date" id="tiFecha"></label>
+            <label class="f">Diagnóstico (min)<input type="number" min="0" step="5" inputmode="numeric" data-fase="diag"></label>
+            <label class="f">Documentación (min)<input type="number" min="0" step="5" inputmode="numeric" data-fase="docu"></label>
+            <label class="f">Desmontaje (min)<input type="number" min="0" step="5" inputmode="numeric" data-fase="desm"></label>
+            <label class="f">Montaje (min)<input type="number" min="0" step="5" inputmode="numeric" data-fase="mont"></label>
+            <label class="f">Conexión (min)<input type="number" min="0" step="5" inputmode="numeric" data-fase="conex"></label>
+            <label class="f">Soldaduras (min)<input type="number" min="0" step="5" inputmode="numeric" data-fase="sold"></label>
+            <label class="f">Meter en caja (min)<input type="number" min="0" step="5" inputmode="numeric" data-fase="caja"></label>
+            <label class="f span2">Observaciones<textarea id="tiObs" placeholder="Ej. se tuvo que cambiar 2 veces el BMS"></textarea></label>
+          </div>
+          <div class="qsteps" style="margin-top:12px;align-items:center">
+            <span class="num" style="font-weight:600;font-size:17px" id="tiFormTotal">0 min</span>
+            <button class="btn primary" id="tiGuardar">Guardar registro</button>
+            <button class="btn" id="tiCancelar" hidden>Cancelar edición</button>
+          </div>
+        </div>
+        <div class="panel-b" style="border-top:1px solid var(--line)">
+          <div class="eyebrow">Registros de este encargo</div>
+          <div class="tblwrap" style="margin-top:8px"><table class="tar rtab tiempos" id="tiHist"></table></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="panel admin-only" style="margin-top:16px">
+    <div class="panel-h"><h2>Todos los registros</h2><div class="toolbar"><label class="f" style="width:auto"><input type="date" id="tiDesde" title="Desde"></label><label class="f" style="width:auto"><input type="date" id="tiHasta" title="Hasta"></label><button class="btn sm" id="tiCsv">⬇ Exportar CSV</button></div></div>
+    <div class="strip" id="tiStrip" style="margin:12px 14px 0"></div>
+    <div class="tblwrap"><table class="tar rtab tiempos" id="tiTodos"></table></div>
+  </div>
+</section>
+
 <section class="view" id="view-rentabilidad">
   <div class="rbar">
     <div class="seg" id="rPresets" role="group" aria-label="Periodo">
@@ -787,6 +845,7 @@ let selId = null, selNotasUnsub = null, notas = [];
 let editingId = null;
 let curPresId = null;
 let readOnly = false;
+let tiempos = [];       // registros de tiempo de taller [{id, encargoId, fecha, diag, docu, ..., total, obs, autorNombre}]
 const demoMode = () => false;
 
 // ---------- Tabs ----------
@@ -797,9 +856,10 @@ function showView(v){
   try{ localStorage.setItem("litio.tab", v); }catch{}
   if(v==="tarifas") renderTarifas();
   if(v==="rentabilidad" && isAdmin) renderRent();
+  if(v==="tiempos") renderTiempos();
 }
-try{ const t=localStorage.getItem("litio.tab"); if(t && ["encargos","presupuestos","rentabilidad","tarifas"].includes(t)) showView(t); }catch{}
-if(/^#(encargos|presupuestos|rentabilidad|tarifas)$/.test(location.hash)) showView(location.hash.slice(1));
+try{ const t=localStorage.getItem("litio.tab"); if(t && ["encargos","presupuestos","tiempos","rentabilidad","tarifas"].includes(t)) showView(t); }catch{}
+if(/^#(encargos|presupuestos|tiempos|rentabilidad|tarifas)$/.test(location.hash)) showView(location.hash.slice(1));
 
 // ---------- Selects ----------
 function fillSelect(sel, items, {value=null, blank=null, cls=false}={}){
@@ -915,8 +975,10 @@ function selectEncargo(id){
   $("dKv").innerHTML = `
     <dt>Teléfono</dt><dd>${esc(e.tel||"—")}</dd>
     <dt>Síntoma</dt><dd>${esc(e.desc||"—")}</dd>
+    <dt>Tiempo en taller</dt><dd>${tiempoEncargoHtml(e)}</dd>
     <dt>Presupuestos</dt><dd>${pres.length? pres.map(p=>`<a href="#presupuestos" data-pres="${esc(p.id)}" class="preslink">${esc(p.num)} · ${eur(p.total)} · <span class="chip ${esc(p.estado)}">${esc(p.estado)}</span></a>`).join("<br>") : "—"}</dd>`;
   $("dKv").querySelectorAll(".preslink").forEach(a => a.addEventListener("click", ev => { ev.preventDefault(); openPres(a.dataset.pres); showView("presupuestos"); }));
+  const bt = $("dKv").querySelector("[data-tiempo]"); if(bt) bt.addEventListener("click", () => { tiSel = e.id; showView("tiempos"); });
   const fotos = (e.fotos||[]).filter(Boolean);
   $("dFotos").innerHTML = fotos.map(id => `<a class="foto" href="${esc(TL.blobUrl(id))}" target="_blank" rel="noopener"><img src="${esc(TL.blobUrl(id))}" alt="Foto de la batería"></a>`).join("");
   $("dFotos").hidden = !fotos.length;
@@ -1687,6 +1749,98 @@ $("tGuardar").addEventListener("click", async () => {
   }catch(err){ toast("No se pudo guardar: "+(err.message||err.code)); }
 });
 
+// ---------- Tiempos de taller ----------
+const FASES = [["diag","Diagnóstico"],["docu","Documentación"],["desm","Desmontaje"],["mont","Montaje"],["conex","Conexión"],["sold","Soldaduras"],["caja","Meter en caja"]];
+const fmtMin = m => { m = Math.round(+m||0); const h = Math.floor(m/60), r = m%60; return h ? `${h} h ${String(r).padStart(2,"0")} min` : `${r} min`; };
+const tiemposDe = id => tiempos.filter(t=>t.encargoId===id).sort((a,b)=> (b.fecha||"").localeCompare(a.fecha||"") || (b.createdAt||0)-(a.createdAt||0));
+const minutosEncargo = id => tiemposDe(id).reduce((a,t)=>a+(+t.total||0),0);
+// Horas presupuestadas de un encargo: las del presupuesto aprobado/facturado si lo hay; si no, del último presupuesto
+function horasPresupuestadas(encId){
+  const ps = presupuestos.filter(p=>p.encargoId===encId); if(!ps.length) return null;
+  const p = ps.find(x=>x.estado==="aprobado"||x.estado==="facturado") || ps.sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0))[0];
+  return {num:p.num, estado:p.estado, horas:prodsOf(p).reduce((a,x)=>a+(+x.horas||0),0)};
+}
+function comparaHtml(encId){
+  const real = minutosEncargo(encId); const hp = horasPresupuestadas(encId); if(hp==null) return "";
+  const presMin = hp.horas*60; const diff = real - presMin; const cls = diff>0 ? "neg" : "pos";
+  return `<div><div class="k">Presupuestado</div><div class="v num">${fmtMin(presMin)}</div><div class="d">${esc(hp.num)} · ${esc(hp.estado)}</div></div>
+    <div><div class="k">Tiempo real</div><div class="v num">${fmtMin(real)}</div><div class="d">${tiemposDe(encId).length} registro${tiemposDe(encId).length===1?"":"s"}</div></div>
+    <div><div class="k">Diferencia</div><div class="v num ${real||presMin?cls:""}">${diff>0?"+":""}${fmtMin(Math.abs(diff)).replace(/^/, diff<0?"−":"")}</div><div class="d">${diff>0?"más de lo presupuestado":diff<0?"menos de lo presupuestado":"igual que lo presupuestado"}${presMin?` · ${Math.round(real/presMin*100)} %`:""}</div></div>`;
+}
+function tiempoEncargoHtml(e){
+  const min = minutosEncargo(e.id); const n = tiemposDe(e.id).length;
+  const hp = isAdmin ? horasPresupuestadas(e.id) : null;
+  const cmp = hp ? ` · presupuestado ${fmtMin(hp.horas*60)}${hp.horas>0?` (<span class="${min>hp.horas*60?"neg":"pos"}" style="font-weight:600">${Math.round(min/(hp.horas*60)*100)} %</span>)`:""}` : "";
+  return `${n?`<b class="num">${fmtMin(min)}</b> <span class="muted">en ${n} registro${n===1?"":"s"}</span>`:`<span class="muted">sin registrar</span>`}${cmp} <button class="btn sm" data-tiempo style="margin-left:6px">⏱ Registrar tiempo</button>`;
+}
+let tiSel = null, tiEdit = null;
+function renderTiempos(){
+  const q = slug($("tiBuscar").value); const solo = $("tiSoloAbiertos").checked;
+  let rows = encargos.filter(e => (!solo || !["Entregado","Rechazado"].includes(e.estado)) && (!q || slug(e.cliente+e.ref+e.bateria).includes(q)));
+  rows.sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
+  $("tiLista").innerHTML = rows.length ? rows.map(e => { const m = minutosEncargo(e.id); return `
+    <button class="row" data-id="${esc(e.id)}" aria-current="${e.id===tiSel}">
+      <div class="ref">${esc(e.ref)}</div>
+      <div style="min-width:0"><div class="t">${esc(e.cliente)}</div><div class="m">${esc(e.bateria||"")}${m?` · <span class="num">${fmtMin(m)}</span>`:""}</div></div>
+      <div class="r"><span class="chip ${chipClass(e.estado)}">${esc(e.estado)}</span></div>
+    </button>`; }).join("") : `<div class="empty">Ningún encargo coincide.</div>`;
+  $("tiLista").querySelectorAll(".row").forEach(r => r.addEventListener("click", () => { tiSel = r.dataset.id; tiEdit = null; renderTiempos(); if(window.innerWidth<=900) $("tiDetalle").scrollIntoView({behavior:"smooth", block:"start"}); }));
+  const e = encargos.find(x=>x.id===tiSel);
+  $("tiEmpty").hidden = !!e; $("tiBody").hidden = !e;
+  if(e){
+    $("tiRef").textContent = `${e.ref} · entrada ${e.fecha||"—"}`; $("tiTitulo").textContent = e.cliente; $("tiSub").textContent = [e.bateria, e.v?`${e.v} V`:"", e.ah?`${e.ah} Ah`:""].filter(Boolean).join(" · ");
+    $("tiTotalChip").textContent = `Total ${fmtMin(minutosEncargo(e.id))}`;
+    const c = $("tiCompara"); const ch = isAdmin ? comparaHtml(e.id) : ""; c.hidden = !ch; c.innerHTML = ch;
+    const t = tiEdit ? tiempos.find(x=>x.id===tiEdit) : null;
+    $("tiFormTitle").textContent = t ? `Editando registro del ${t.fecha||"—"}` : "Nuevo registro";
+    if(!tiFormDirty || t){ $("tiFecha").value = t ? (t.fecha||"") : dayStr(new Date()); FASES.forEach(([k]) => { $("tiBody").querySelector(`[data-fase=${k}]`).value = t && t[k] ? t[k] : ""; }); $("tiObs").value = t ? (t.obs||"") : ""; tiFormDirty = false; }
+    $("tiCancelar").hidden = !t; tiFormTotal();
+    const hist = tiemposDe(e.id);
+    $("tiHist").innerHTML = hist.length ? `<thead><tr><th>Fecha</th>${FASES.map(([,n])=>`<th class="r">${n.replace("Meter en caja","Caja")}</th>`).join("")}<th class="r">Total</th><th>Observaciones</th><th>Quién</th><th></th></tr></thead><tbody>${hist.map(t => `<tr><td class="num" style="white-space:nowrap">${esc(t.fecha||"—")}</td>${FASES.map(([k])=>`<td class="r">${t[k]||"—"}</td>`).join("")}<td class="r" style="font-weight:600">${t.total||0}</td><td>${esc(t.obs||"")}</td><td>${esc(t.autorNombre||"")}</td><td class="act" style="white-space:nowrap">${readOnly?"":`<button class="iconbtn" data-edit="${esc(t.id)}" title="Editar">✎</button><button class="iconbtn" data-del="${esc(t.id)}" title="Borrar">✕</button>`}</td></tr>`).join("")}</tbody><tfoot><tr><td>Total</td>${FASES.map(([k])=>`<td class="r">${hist.reduce((a,t)=>a+(+t[k]||0),0)||"—"}</td>`).join("")}<td class="r">${hist.reduce((a,t)=>a+(+t.total||0),0)}</td><td colspan="3">${fmtMin(hist.reduce((a,t)=>a+(+t.total||0),0))}</td></tr></tfoot>` : `<tbody><tr><td class="empty">Todavía no hay tiempos registrados en este encargo.</td></tr></tbody>`;
+    $("tiHist").querySelectorAll("[data-edit]").forEach(b => b.addEventListener("click", () => { tiEdit = b.dataset.edit; tiFormDirty = false; renderTiempos(); $("tiFecha").focus(); }));
+    $("tiHist").querySelectorAll("[data-del]").forEach(b => b.addEventListener("click", () => confirmInline(b.parentElement, "¿Borrar este registro?", async () => { try{ await db.doc("tiempos/"+b.dataset.del).delete(); if(tiEdit===b.dataset.del) tiEdit=null; toast("Registro borrado"); }catch(err){ toast("No se pudo borrar: "+(err.message||err.code)); } })));
+  }
+  if(isAdmin) renderTiemposTodos();
+}
+let tiFormDirty = false;
+function tiFormTotal(){ const t = FASES.reduce((a,[k]) => a + (Math.max(0, +$("tiBody").querySelector(`[data-fase=${k}]`).value||0)), 0); $("tiFormTotal").textContent = fmtMin(t) + (t>=60 ? ` (${t} min)` : ""); return t; }
+$("tiBody").querySelectorAll("[data-fase], #tiObs, #tiFecha").forEach(el => el.addEventListener("input", () => { tiFormDirty = true; tiFormTotal(); }));
+["tiBuscar","tiSoloAbiertos"].forEach(id => $(id).addEventListener("input", renderTiempos));
+$("tiCancelar").addEventListener("click", () => { tiEdit = null; tiFormDirty = false; renderTiempos(); });
+$("tiGuardar").addEventListener("click", async () => {
+  const e = encargos.find(x=>x.id===tiSel); if(!e) return;
+  const total = tiFormTotal(); if(!total){ toast("Indica los minutos de al menos una fase"); return; }
+  const d = { encargoId:e.id, ref:e.ref||"", fecha:$("tiFecha").value||dayStr(new Date()), obs:$("tiObs").value.trim(), autor:me.id||null, autorNombre:me.name||"", updatedAt:Date.now() };
+  FASES.forEach(([k]) => { d[k] = Math.max(0, Math.round(+$("tiBody").querySelector(`[data-fase=${k}]`).value||0)); });
+  $("tiGuardar").disabled = true;
+  try{
+    if(tiEdit){ const prev = tiempos.find(x=>x.id===tiEdit)||{}; await db.doc("tiempos/"+tiEdit).update({...d, autor:prev.autor||d.autor, autorNombre:prev.autorNombre||d.autorNombre, createdAt:prev.createdAt||Date.now()}); toast("Registro actualizado"); }
+    else { d.createdAt = Date.now(); await db.collection("tiempos").add(d); const prev = selId; selId = e.id; await addNota({tipo:"sistema", texto:`Tiempo de taller registrado · ${fmtMin(total)}${d.obs?` · ${d.obs}`:""}`}); selId = prev; toast(`Tiempo guardado · ${fmtMin(total)}`); }
+    tiEdit = null; tiFormDirty = false; renderTiempos();
+  }catch(err){ toast("No se pudo guardar: "+(err.message||err.code)); }
+  finally{ $("tiGuardar").disabled = false; }
+});
+// Todos los registros (administrador): filtro por fecha, totales por fase y CSV
+let tiTodosRows = [];
+function renderTiemposTodos(){
+  const from = $("tiDesde").value, to = $("tiHasta").value;
+  const rows = tiempos.filter(t => (!from || (t.fecha||"")>=from) && (!to || (t.fecha||"")<=to)).sort((a,b)=> (b.fecha||"").localeCompare(a.fecha||"") || (b.createdAt||0)-(a.createdAt||0));
+  tiTodosRows = rows;
+  const tot = FASES.reduce((o,[k]) => (o[k] = rows.reduce((a,t)=>a+(+t[k]||0),0), o), {}); const total = rows.reduce((a,t)=>a+(+t.total||0),0);
+  const encs = new Set(rows.map(t=>t.encargoId)).size;
+  $("tiStrip").innerHTML = [{k:"Tiempo total", v:fmtMin(total), sub:`${rows.length} registro${rows.length===1?"":"s"} · ${encs} encargo${encs===1?"":"s"}`}, ...FASES.filter(([k])=>tot[k]).sort((a,b)=>tot[b[0]]-tot[a[0]]).slice(0,4).map(([k,n]) => ({k:n, v:fmtMin(tot[k]), sub:`${Math.round(tot[k]/total*100)} % del tiempo`}))].map(t=>`<div class="tile"><div class="eyebrow">${esc(t.k)}</div><div class="v num" style="font-size:22px">${esc(t.v)}</div><div class="sub">${esc(t.sub)}</div></div>`).join("");
+  $("tiCsv").disabled = !rows.length || !downloads;
+  $("tiTodos").innerHTML = rows.length ? `<thead><tr><th>Fecha</th><th>Encargo</th><th>Cliente</th><th>Batería</th>${FASES.map(([,n])=>`<th class="r">${n.replace("Meter en caja","Caja")}</th>`).join("")}<th class="r">Total</th><th>Observaciones</th><th>Quién</th></tr></thead><tbody>${rows.map(t => { const e = encargos.find(x=>x.id===t.encargoId); return `<tr><td class="num" style="white-space:nowrap">${esc(t.fecha||"—")}</td><td><button class="lnk" data-enc="${esc(t.encargoId)}">${esc(e?.ref||t.ref||"—")}</button></td><td>${esc(e?.cliente||"")}</td><td>${esc(e?.bateria||"")}</td>${FASES.map(([k])=>`<td class="r">${t[k]||"—"}</td>`).join("")}<td class="r" style="font-weight:600">${t.total||0}</td><td>${esc(t.obs||"")}</td><td>${esc(t.autorNombre||"")}</td></tr>`; }).join("")}</tbody><tfoot><tr><td colspan="4">Total</td>${FASES.map(([k])=>`<td class="r">${tot[k]||"—"}</td>`).join("")}<td class="r">${total}</td><td colspan="2">${fmtMin(total)}</td></tr></tfoot>` : `<tbody><tr><td class="empty">No hay registros en este periodo.</td></tr></tbody>`;
+  $("tiTodos").querySelectorAll("[data-enc]").forEach(b => b.addEventListener("click", () => { tiSel = b.dataset.enc; tiEdit = null; renderTiempos(); window.scrollTo({top:0, behavior:"smooth"}); }));
+}
+["tiDesde","tiHasta"].forEach(id => $(id).addEventListener("change", renderTiemposTodos));
+$("tiCsv").addEventListener("click", async () => {
+  if(!downloads || !tiTodosRows.length) return;
+  const hdr = ["Batería / referencia","Fecha",...FASES.map(([,n])=>n+" (min)"),"TOTAL (min)","Observaciones","Cliente","Quién"];
+  const rows = tiTodosRows.map(t => { const e = encargos.find(x=>x.id===t.encargoId); return [e?.ref||t.ref||"", t.fecha||"", ...FASES.map(([k])=>t[k]||0), t.total||0, t.obs||"", e?.cliente||"", t.autorNombre||""].map(v=>`"${String(v).replace(/"/g,'""')}"`).join(";"); });
+  try{ await downloads.save({filename:`tiempos-baterias-${$("tiDesde").value||"inicio"}_${$("tiHasta").value||"hoy"}.csv`, data:new Blob(["﻿"+[hdr.join(";"),...rows].join("\r\n")],{type:"text/csv"})}); toast("CSV preparado"); }catch(err){ toast("No se pudo descargar: "+(err.message||err.code)); }
+});
+
 // ---------- Rentabilidad (solo administrador) ----------
 // Presupuestos aprobados/facturados del periodo: ingresos (sin IVA) − costes directos − gastos fijos = beneficio neto.
 let gastos = [];            // [{id, concepto, importe, tipo:"mensual"|"anual"|"puntual", desde:"AAAA-MM-DD", hasta:"AAAA-MM-DD"}]
@@ -1796,8 +1950,8 @@ function renderRentNums(){
   // Tabla de presupuestos aprobados
   $("rCount").textContent = rows.length ? `${rows.length} en el periodo` : "";
   $("rCsv").disabled = !rows.length || !downloads;
-  $("rTabla").innerHTML = rows.length ? `<thead><tr><th>Aprobado</th><th>Nº</th><th>Cliente</th><th>Batería / productos</th><th>Estado</th><th class="r">Horas</th><th class="r">Ingreso</th><th class="r">Coste</th><th class="r">Beneficio</th><th class="r">Margen</th></tr></thead><tbody>${rows.map(r => { const p=r.p; const e=encargos.find(x=>x.id===p.encargoId); const np=prodsOf(p).length;
-      return `<tr><td class="num" style="white-space:nowrap">${esc(r.fecha.toLocaleDateString("es-ES"))}</td><td><button class="lnk" data-pres="${esc(p.id)}" title="Abrir el presupuesto">${esc(p.num)}</button></td><td>${esc(p.cliente||e?.cliente||"—")}</td><td>${np>1?`<span class="wh">${np} productos</span> `:""}${esc(p.bateria||e?.bateria||"")}</td><td><span class="chip ${esc(p.estado)}">${esc(p.estado)}</span>${p.numFactura?` <span class="wh">${esc(p.numFactura)}</span>`:""}</td><td class="r">${r.horas?r.horas.toLocaleString("es-ES")+" h":"—"}</td><td class="r">${eur(r.ingreso)}</td><td class="r">${eur(r.coste)}</td><td class="r ${cls(r.beneficio)}">${eur(r.beneficio)}</td><td class="r">${pct(r.ingreso>0 ? r.beneficio/r.ingreso*100 : 0)}</td></tr>`; }).join("")}</tbody><tfoot><tr><td colspan="5">Total del periodo</td><td class="r">${T.horas.toLocaleString("es-ES")} h</td><td class="r">${eur(T.ingresos)}</td><td class="r">${eur(T.costeFull)}</td><td class="r ${cls(T.brutoFull)}">${eur(T.brutoFull)}</td><td class="r">${pct(T.ingresos>0 ? T.brutoFull/T.ingresos*100 : 0)}</td></tr></tfoot>`
+  $("rTabla").innerHTML = rows.length ? `<thead><tr><th>Aprobado</th><th>Nº</th><th>Cliente</th><th>Batería / productos</th><th>Estado</th><th class="r">Horas</th><th class="r">Reales</th><th class="r">Ingreso</th><th class="r">Coste</th><th class="r">Beneficio</th><th class="r">Margen</th></tr></thead><tbody>${rows.map(r => { const p=r.p; const e=encargos.find(x=>x.id===p.encargoId); const np=prodsOf(p).length;
+      return `<tr><td class="num" style="white-space:nowrap">${esc(r.fecha.toLocaleDateString("es-ES"))}</td><td><button class="lnk" data-pres="${esc(p.id)}" title="Abrir el presupuesto">${esc(p.num)}</button></td><td>${esc(p.cliente||e?.cliente||"—")}</td><td>${np>1?`<span class="wh">${np} productos</span> `:""}${esc(p.bateria||e?.bateria||"")}</td><td><span class="chip ${esc(p.estado)}">${esc(p.estado)}</span>${p.numFactura?` <span class="wh">${esc(p.numFactura)}</span>`:""}</td><td class="r">${r.horas?r.horas.toLocaleString("es-ES")+" h":"—"}</td><td class="r ${r.p.encargoId && minutosEncargo(r.p.encargoId) ? (minutosEncargo(r.p.encargoId) > r.horas*60 ? "neg" : "pos") : ""}" title="Tiempo real registrado en Tiempos">${r.p.encargoId && minutosEncargo(r.p.encargoId) ? fmtMin(minutosEncargo(r.p.encargoId)) : "—"}</td><td class="r">${eur(r.ingreso)}</td><td class="r">${eur(r.coste)}</td><td class="r ${cls(r.beneficio)}">${eur(r.beneficio)}</td><td class="r">${pct(r.ingreso>0 ? r.beneficio/r.ingreso*100 : 0)}</td></tr>`; }).join("")}</tbody><tfoot><tr><td colspan="5">Total del periodo</td><td class="r">${T.horas.toLocaleString("es-ES")} h</td><td class="r">${fmtMin(rows.reduce((a,r)=>a+(r.p.encargoId?minutosEncargo(r.p.encargoId):0),0))}</td><td class="r">${eur(T.ingresos)}</td><td class="r">${eur(T.costeFull)}</td><td class="r ${cls(T.brutoFull)}">${eur(T.brutoFull)}</td><td class="r">${pct(T.ingresos>0 ? T.brutoFull/T.ingresos*100 : 0)}</td></tr></tfoot>`
     : `<tbody><tr><td class="empty">No hay presupuestos aprobados en este periodo. Cambia las fechas o aprueba un presupuesto.</td></tr></tbody>`;
   $("rTabla").querySelectorAll("[data-pres]").forEach(b => b.addEventListener("click", () => { openPres(b.dataset.pres); showView("presupuestos"); }));
   // Segunda tabla: solo materiales (sin horas de personal ni diagnosis)
@@ -1907,6 +2061,7 @@ $("rCsv").addEventListener("click", async () => {
 function renderAll(){
   refreshSelects(); renderStrip(); renderLista(); renderListaPres(); renderCalc();
   if(isAdmin && $("view-rentabilidad").classList.contains("active")) renderRentNums();
+  if($("view-tiempos").classList.contains("active")) renderTiempos();
   if(selId && !$("detalleBody").hidden){ const e=encargos.find(x=>x.id===selId); if(e){ $("dTitulo").textContent=e.cliente; renderSenalDetalle(e); fillSelect($("dEstado"),config.estados,{value:e.estado}); fillSelect($("dAlmacen"),config.almacenes,{value:e.almacen}); } else { $("detalleBody").hidden=true; $("detalleEmpty").hidden=false; selId=null; } }
 }
 
@@ -1919,7 +2074,7 @@ function setRole(admin){
 }
 function setReadOnly(ro){
   readOnly = ro;
-  ["btnNuevo","btnPublicar","btnEditar","qGuardar","qEnviado","qAprobar","qRechazar","hFacturado","tGuardar","addCelda","addBms","btnNuevoPres","btnPresupuestar","rAddGasto","rGuardarGastos"].forEach(id=>{ $(id).disabled = ro; });
+  ["btnNuevo","btnPublicar","btnEditar","qGuardar","qEnviado","qAprobar","qRechazar","hFacturado","tGuardar","addCelda","addBms","btnNuevoPres","btnPresupuestar","rAddGasto","rGuardarGastos","tiGuardar"].forEach(id=>{ $(id).disabled = ro; });
   $("dEstado").disabled = ro; $("dAlmacen").disabled = ro;
   if(ro){ $("statusLine").hidden=false; $("statusLine").textContent = "Solo lectura: tu acceso a este panel no permite cambios. Pide al propietario que te añada como colaborador."; }
 }
@@ -1941,6 +2096,7 @@ function subscribeAll(){
   db.doc("config/general").onSnapshot(s => { if(ex(s)){ const d=s.data(); config = {almacenes:d.almacenes?.length?d.almacenes:DEF_CONFIG.almacenes, estados:d.estados?.length?d.estados:DEF_CONFIG.estados, empresa:{...DEF_EMPRESA, ...(d.empresa||{})}}; } renderAll(); }, e=>console.warn(e));
   db.collection("encargos").onSnapshot(s => { encargos = s.docs.map(d=>({id:d.id, ...d.data()})); renderAll(); if(selId){ if(!encargos.some(e=>e.id===selId)){ selId=null; $("detalleBody").hidden=true; $("detalleEmpty").hidden=false; } else { const e=encargos.find(x=>x.id===selId); const fotos=(e.fotos||[]); $("dFotos").innerHTML = fotos.map(id => `<a class="foto" href="${esc(TL.blobUrl(id))}" target="_blank" rel="noopener"><img src="${esc(TL.blobUrl(id))}" alt="Foto de la batería"></a>`).join(""); $("dFotos").hidden=!fotos.length; } } }, e=>console.warn(e));
   db.collection("presupuestos").onSnapshot(s => { presupuestos = s.docs.map(d=>({id:d.id, ...d.data()})); renderAll(); if(curPresId){ renderHolded(); } }, e=>console.warn(e));
+  db.collection("tiempos").onSnapshot(s => { tiempos = s.docs.map(d=>({id:d.id, ...d.data()})); renderAll(); }, e=>console.warn(e));
 }
 async function enterApp(sess){
   db = TL.db; assets = TL.assets; user = TL.user; downloads = TL.downloads;
