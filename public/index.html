@@ -1902,7 +1902,7 @@ function rentCalc(){
     const des = Array.isArray(calc.desglose) ? calc.desglose : [];
     const costeHoras = des.filter(d=>d.c==="Horas").reduce((x,d)=>x+(+d.total||0),0), costeDiag = des.filter(d=>d.c==="Diagnosis").reduce((x,d)=>x+(+d.total||0),0);
     const horas = prodsOf(p).reduce((x,pr)=>x+(+pr.horas||0),0);
-    return {p, fecha:f, dia, mk:dia.slice(0,7), ingreso, coste, horas, costeHoras, costeDiag, costeMat:Math.max(0, coste-costeHoras-costeDiag), costeSinHoras:coste-costeHoras, beneficio:ingreso-coste};
+    return {p, fecha:f, dia, mk:dia.slice(0,7), ingreso, coste, horas, costeHoras, costeDiag, costeMat:Math.max(0, coste-costeHoras-costeDiag), costeSinHoras:Math.max(0, coste-costeHoras-costeDiag), beneficio:ingreso-coste};
   }).filter(r => (!from || r.dia>=from) && (!to || r.dia<=to)).sort((a,b)=>b.fecha-a.fecha);
   // Días del periodo: cada día lleva sus presupuestos aprobados y su parte de gastos fijos
   const days = [];
@@ -1936,7 +1936,7 @@ function renderRentNums(){
   const cls = v => v<0 ? "neg" : v>0 ? "pos" : "";
   const tiles = [
     {k:"Ingresos (sin IVA)", v:eur(T.ingresos), sub:`${T.n} presupuesto${T.n===1?"":"s"}${T.n?` · ticket medio ${eur(T.ingresos/T.n)}`:""}`},
-    {k:"Costes directos", v:eur(T.costes), sub:`celdas, BMS, materiales y diagnosis · sin las ${T.horas.toLocaleString("es-ES")} h de personal`},
+    {k:"Costes directos", v:eur(T.costes), sub:`celdas, BMS y materiales · sin horas ni diagnosis (van en el salario del técnico)`},
     {k:"Beneficio bruto", v:eur(T.bruto), sub:`margen ${pct(T.ingresos>0 ? T.bruto/T.ingresos*100 : 0)}`, c:cls(T.bruto)},
     {k:"Gastos fijos del periodo", v:eur(T.fijos), sub:`por días laborables · ${T.meses} mes${T.meses===1?"":"es"}`},
     {k:"Beneficio neto", v:eur(T.neto), sub:`margen neto ${pct(T.ingresos>0 ? T.neto/T.ingresos*100 : 0)}`, c:cls(T.neto)},
