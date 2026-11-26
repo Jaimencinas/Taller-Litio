@@ -339,6 +339,19 @@ body[data-auth="out"] .top, body[data-auth="out"] main{visibility:hidden}
 .conv-k{display:flex;gap:18px;flex-wrap:wrap;margin-top:6px;font-size:13px}
 .conv-k b{font-family:var(--display);font-size:20px;font-weight:700;margin-right:4px}
 .conv-k b.ok{color:var(--ok)}.conv-k b.crit{color:var(--crit)}
+/* Leads */
+.badge{display:inline-block;min-width:18px;padding:0 5px;border-radius:999px;background:var(--accent);color:#fff;font-size:11px;font-weight:700;line-height:18px;text-align:center;vertical-align:middle;margin-left:2px}
+.chip.nuevo{background:var(--info-soft,#e3edfa);color:var(--info,#2a5fae)}
+.chip.contactado{background:var(--surface-2);color:var(--ink-2)}
+.chip.esperandoalcliente{background:var(--warn-soft);color:var(--warn)}
+.chip.orientativoenviado{background:#ede7fb;color:#5b3fa8}
+.chip.convertido{background:var(--ok-soft);color:var(--ok)}
+.chip.perdido{background:var(--crit-soft,#f8e0dd);color:var(--crit)}
+.chip.vence{background:var(--crit-soft,#f8e0dd);color:var(--crit)}
+.chip.quieto{background:var(--warn-soft);color:var(--warn)}
+#ldLista .row[data-alerta="1"] .ref{color:var(--crit)}
+.conv-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 12px;width:100%}
+@media (max-width:640px){.conv-form{grid-template-columns:minmax(0,1fr)}}
 /* Tiempos de taller */
 .tcols{grid-template-columns:minmax(0,.9fr) minmax(0,1.3fr)}
 @media (max-width:900px){.tcols{grid-template-columns:minmax(0,1fr)}}
@@ -408,6 +421,7 @@ body[data-auth="out"] .top, body[data-auth="out"] main{visibility:hidden}
     <nav class="tabs" role="tablist">
       <button role="tab" aria-selected="true" data-view="encargos" id="tab-encargos">Encargos</button>
       <button role="tab" aria-selected="false" data-view="presupuestos" id="tab-presupuestos">Presupuestos</button>
+      <button role="tab" aria-selected="false" data-view="leads" id="tab-leads">Leads <span class="badge" id="leadsBadge" hidden></span></button>
       <button role="tab" aria-selected="false" data-view="tiempos" id="tab-tiempos">Tiempos</button>
       <button role="tab" aria-selected="false" data-view="rentabilidad" id="tab-rentabilidad" class="admin-only">Rentabilidad</button>
       <button role="tab" aria-selected="false" data-view="tarifas" id="tab-tarifas" class="admin-only">Tarifas y almacenes</button>
@@ -527,6 +541,74 @@ body[data-auth="out"] .top, body[data-auth="out"] main{visibility:hidden}
           <div class="hint" style="margin-top:4px">Etiqueta, conector, daños visibles… Se guardan al pulsar «Guardar encargo».</div>
         </div>
         <div class="span2" style="display:flex;gap:8px;align-items:end;justify-content:flex-end"><button class="btn primary" type="submit" id="formSubmit">Guardar encargo</button></div>
+      </form>
+    </div>
+  </div>
+</section>
+
+<!-- ============ LEADS (contactos que aún no son encargo) ============ -->
+<section class="view" id="view-leads">
+  <div class="strip" id="ldStrip"></div>
+  <div class="cols">
+    <div class="panel">
+      <div class="panel-h"><h2>Leads</h2><div class="toolbar"><button class="btn primary" id="ldNuevo">+ Nuevo lead</button></div></div>
+      <div class="filters">
+        <input type="text" id="ldBuscar" placeholder="Buscar cliente, teléfono, batería…">
+        <select id="ldEstadoF"><option value="abiertos">Abiertos</option><option value="">Todos</option><option value="Nuevo">Nuevo</option><option value="Contactado">Contactado</option><option value="Esperando al cliente">Esperando al cliente</option><option value="Orientativo enviado">Orientativo enviado</option><option value="Convertido">Convertidos</option><option value="Perdido">Perdidos</option></select>
+      </div>
+      <div class="list" id="ldLista"></div>
+    </div>
+    <div class="panel" id="ldDetalle">
+      <div class="panel-b empty" id="ldEmpty">Selecciona un lead o crea uno nuevo. Aquí quedan los contactos de los chats que todavía no son encargo, para que no se pierdan.</div>
+      <div id="ldBody" hidden>
+        <div class="panel-b">
+          <div class="detail-h">
+            <div style="min-width:0;flex:1"><div class="eyebrow" id="ldRef"></div><h2 id="ldTitulo"></h2><div class="muted" id="ldSub"></div></div>
+            <div class="actions" id="ldActs"></div>
+          </div>
+          <div class="grid g2" style="margin-top:12px">
+            <label class="f">Estado del lead<select id="ldEstado"></select></label>
+            <label class="f">Próximo seguimiento<input type="date" id="ldProximo"></label>
+            <label class="f span2">Qué hay que hacer<input type="text" id="ldSeguimiento" placeholder="Ej. llamar el jueves para confirmar si trae la batería"></label>
+          </div>
+          <div class="senal" id="ldConvBox" hidden></div>
+          <dl class="kv" style="margin-top:12px" id="ldKv"></dl>
+          <div class="fotos fotos-view" id="ldFotosView" style="margin-top:12px"></div>
+        </div>
+        <div class="panel-b" style="border-top:1px solid var(--line)">
+          <div class="eyebrow">Seguimiento del lead</div>
+          <div class="tl" id="ldTimeline"></div>
+          <div class="composer" id="ldComposer">
+            <textarea id="ldTexto" placeholder="Qué ha dicho el cliente, qué le hemos ofrecido, qué falta…"></textarea>
+            <div class="foot">
+              <label class="file-lbl btn sm">🎙️ Audio / foto<input type="file" id="ldFile" accept="audio/*,video/mp4,video/webm,image/*"></label>
+              <span class="attach-prev" id="ldFileName"></span>
+              <button class="btn primary sm" id="ldPublicar" style="margin-left:auto">Publicar nota</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="panel" id="ldFormPanel" hidden style="margin-top:16px">
+    <div class="panel-h"><h2 id="ldFormTitle">Nuevo lead</h2><div class="toolbar"><button class="btn sm" id="ldFormCancel">Cancelar</button></div></div>
+    <div class="panel-b">
+      <form id="formLead" class="grid g4">
+        <label class="f">Cliente *<input type="text" id="lCliente" required></label>
+        <label class="f">Teléfono<input type="tel" id="lTel"></label>
+        <label class="f">Canal<select id="lCanal"><option>WhatsApp</option><option>Llamada</option><option>Web</option><option>Amazon</option><option>Tienda</option><option>Email</option><option>Otro</option></select></label>
+        <label class="f">Precio orientativo (€, sin IVA)<input type="number" id="lPrecio" min="0" step="1" placeholder="si se le ha dado por chat"></label>
+        <label class="f span2">Batería / vehículo<input type="text" id="lBateria" placeholder="Ej. Patinete Xiaomi 36V 7.8Ah"></label>
+        <label class="f">Tensión (V)<input type="number" id="lV" step="0.1"></label>
+        <label class="f">Capacidad (Ah)<input type="number" id="lAh" step="0.1"></label>
+        <label class="f span2">Qué necesita / qué cuenta el cliente<textarea id="lDesc" placeholder="No carga, pide precio para cambiar celdas, le urge para el lunes…"></textarea></label>
+        <label class="f">Próximo seguimiento<input type="date" id="lProximo"></label>
+        <label class="f">Qué hay que hacer<input type="text" id="lSeguimiento" placeholder="Ej. enviar orientativo"></label>
+        <div class="span2">
+          <div class="eyebrow" style="margin-bottom:6px">Fotos que ha enviado (hasta 3)</div>
+          <div class="fotos" id="lFotos"></div>
+        </div>
+        <div class="span2" style="display:flex;gap:8px;align-items:end;justify-content:flex-end"><button class="btn primary" type="submit" id="ldSubmit">Guardar lead</button></div>
       </form>
     </div>
   </div>
@@ -845,6 +927,7 @@ let selId = null, selNotasUnsub = null, notas = [];
 let editingId = null;
 let curPresId = null;
 let readOnly = false;
+let leads = [];         // contactos que aún no son encargo [{id, ref, cliente, tel, canal, bateria, estado, proximo, ...}]
 let tiempos = [];       // registros de tiempo de taller [{id, encargoId, fecha, diag, docu, ..., total, obs, autorNombre}]
 const demoMode = () => false;
 
@@ -857,9 +940,10 @@ function showView(v){
   if(v==="tarifas") renderTarifas();
   if(v==="rentabilidad" && isAdmin) renderRent();
   if(v==="tiempos") renderTiempos();
+  if(v==="leads") renderLeads();
 }
-try{ const t=localStorage.getItem("litio.tab"); if(t && ["encargos","presupuestos","tiempos","rentabilidad","tarifas"].includes(t)) showView(t); }catch{}
-if(/^#(encargos|presupuestos|tiempos|rentabilidad|tarifas)$/.test(location.hash)) showView(location.hash.slice(1));
+try{ const t=localStorage.getItem("litio.tab"); if(t && ["encargos","leads","presupuestos","tiempos","rentabilidad","tarifas"].includes(t)) showView(t); }catch{}
+if(/^#(encargos|leads|presupuestos|tiempos|rentabilidad|tarifas)$/.test(location.hash)) showView(location.hash.slice(1));
 
 // ---------- Selects ----------
 function fillSelect(sel, items, {value=null, blank=null, cls=false}={}){
@@ -1019,12 +1103,13 @@ $("dAlmacen").addEventListener("change", async () => {
 });
 
 // ---------- Timeline / notas ----------
-async function renderTimeline(){
-  const items = [...notas].sort((a,b)=>a.ts-b.ts);
-  if(!items.length){ $("timeline").innerHTML = `<div class="empty" style="padding:14px">Sin notas todavía. Escribe la primera para dejar constancia del estado de entrada.</div>`; return; }
+async function renderTimeline(){ await renderTimelineIn("timeline", notas, delNota, "Sin notas todavía. Escribe la primera para dejar constancia del estado de entrada."); }
+async function renderTimelineIn(hostId, lista, onDel, vacio){
+  const items = [...lista].sort((a,b)=>a.ts-b.ts);
+  if(!items.length){ $(hostId).innerHTML = `<div class="empty" style="padding:14px">${esc(vacio)}</div>`; return; }
   const ids = [...new Set(items.map(n=>n.autor).filter(Boolean))];
   let profiles = {}; try{ if(user && ids.length) profiles = await user.profiles(ids); }catch{}
-  $("timeline").innerHTML = items.map(n => {
+  $(hostId).innerHTML = items.map(n => {
     const p = profiles[n.autor]; const name = (p && p.name) || n.autorNombre || (n.tipo==="sistema"?"Sistema":"Alguien");
     const av = p ? `<img class="av" src="${esc(p.avatarUrl)}" alt="">` : `<div class="av" style="width:28px;height:28px;border-radius:50%;background:var(--surface-2)"></div>`;
     let media = "";
@@ -1038,7 +1123,7 @@ async function renderTimeline(){
       <div class="hd"><b>${esc(name)}</b><span class="num">${fmtDate(n.ts)}</span>${n.estado?`<span class="chip ${chipClass(n.estado)}">${esc(n.estado)}</span>`:""}${n.almacen?`<span class="wh">${esc(n.almacen)}</span>`:""}${canDel?`<button class="del" data-del="${esc(n.id)}" title="Eliminar nota">✕</button>`:""}</div>
       ${n.texto?`<div class="tx${n.tipo==="sistema"?" muted":""}">${esc(n.texto)}</div>`:""}${media}</div></div>`;
   }).join("");
-  $("timeline").querySelectorAll("[data-del]").forEach(b => b.addEventListener("click", () => delNota(b.dataset.del)));
+  $(hostId).querySelectorAll("[data-del]").forEach(b => b.addEventListener("click", () => onDel(b.dataset.del)));
 }
 async function addNota(n){
   const e = encargos.find(x=>x.id===selId); if(!e) return;
@@ -1118,20 +1203,23 @@ $("btnNuevo").addEventListener("click", () => openForm(null));
 $("formCancel").addEventListener("click", () => { $("formPanel").hidden = true; });
 // Fotos del formulario: slots = {id} (ya subida) | {file, url} (pendiente)
 let fotoSlots = [];
-function renderFotoSlots(){
-  const html = fotoSlots.map((s,i) => `<div class="foto"><img src="${esc(s.id? TL.blobUrl(s.id) : s.url)}" alt="Foto ${i+1}"><button type="button" class="x" data-rm="${i}" title="Quitar">✕</button></div>`);
-  if(fotoSlots.length < 3) html.push(`<label class="foto-add"><input type="file" id="eFotoInput" accept="image/*" multiple>📷<span>Añadir foto</span><span class="muted">${fotoSlots.length}/3</span></label>`);
-  $("eFotos").innerHTML = html.join("");
-  $("eFotos").querySelectorAll("[data-rm]").forEach(b => b.addEventListener("click", () => { const s=fotoSlots.splice(+b.dataset.rm,1)[0]; if(s && s.url) URL.revokeObjectURL(s.url); renderFotoSlots(); }));
-  const inp = $("eFotoInput"); if(inp) inp.addEventListener("change", () => {
-    for(const f of inp.files){ if(fotoSlots.length>=3) break; if(!/^image\/(png|jpeg|gif|webp)$/.test(f.type)){ toast("Solo imágenes JPG, PNG, GIF o WebP"); continue; } if(f.size>20*1024*1024){ toast(`${f.name} supera 20 MB`); continue; } fotoSlots.push({file:f, url:URL.createObjectURL(f)}); }
-    renderFotoSlots();
+function renderFotoSlots(){ renderSlotsIn(fotoSlots, "eFotos", "eFotoInput", renderFotoSlots); }
+// Pinta los huecos de fotos (hasta 3) de un formulario en el contenedor indicado
+function renderSlotsIn(slots, hostId, inputId, rerender){
+  const html = slots.map((s,i) => `<div class="foto"><img src="${esc(s.id? TL.blobUrl(s.id) : s.url)}" alt="Foto ${i+1}"><button type="button" class="x" data-rm="${i}" title="Quitar">✕</button></div>`);
+  if(slots.length < 3) html.push(`<label class="foto-add"><input type="file" id="${inputId}" accept="image/*" multiple>📷<span>Añadir foto</span><span class="muted">${slots.length}/3</span></label>`);
+  $(hostId).innerHTML = html.join("");
+  $(hostId).querySelectorAll("[data-rm]").forEach(b => b.addEventListener("click", () => { const s=slots.splice(+b.dataset.rm,1)[0]; if(s && s.url) URL.revokeObjectURL(s.url); rerender(); }));
+  const inp = $(inputId); if(inp) inp.addEventListener("change", () => {
+    for(const f of inp.files){ if(slots.length>=3) break; if(!/^image\/(png|jpeg|gif|webp)$/.test(f.type)){ toast("Solo imágenes JPG, PNG, GIF o WebP"); continue; } if(f.size>20*1024*1024){ toast(`${f.name} supera 20 MB`); continue; } slots.push({file:f, url:URL.createObjectURL(f)}); }
+    rerender();
   });
 }
-async function commitFotos(prevIds){
+async function commitFotos(prevIds, slots){
   // Sube las pendientes, devuelve ids finales; borra las que se quitaron
+  slots = slots || fotoSlots;
   const ids = [];
-  for(const s of fotoSlots){
+  for(const s of slots){
     if(s.id){ ids.push(s.id); continue; }
     if(!assets){ toast("Sin permiso para subir fotos: se guarda el encargo sin ellas"); continue; }
     const r = await assets.upload(s.file, {type:s.file.type}); ids.push(r.id); URL.revokeObjectURL(s.url);
@@ -1749,6 +1837,216 @@ $("tGuardar").addEventListener("click", async () => {
   }catch(err){ toast("No se pudo guardar: "+(err.message||err.code)); }
 });
 
+// ---------- Leads ----------
+const LEAD_ESTADOS = ["Nuevo","Contactado","Esperando al cliente","Orientativo enviado","Convertido","Perdido"];
+const LEAD_MOTIVOS = ["Precio","No contesta","No compensa reparar","Lo arregló en otro sitio","Otro"];
+const LEAD_ABIERTO = l => !["Convertido","Perdido"].includes(l.estado);
+const LEAD_DIAS_ALERTA = 3;
+const leadDiasQuieto = l => Math.floor((Date.now() - (l.updatedAt||l.createdAt||Date.now()))/864e5);
+const leadVencido = l => LEAD_ABIERTO(l) && l.proximo && l.proximo < dayStr(new Date());
+const leadHoy = l => LEAD_ABIERTO(l) && l.proximo === dayStr(new Date());
+const leadQuieto = l => LEAD_ABIERTO(l) && !l.proximo && leadDiasQuieto(l) >= LEAD_DIAS_ALERTA;
+const leadChip = est => `<span class="chip ${slug(est)}">${esc(est)}</span>`;
+let ldSel = null, ldEditing = null, ldNotas = [], ldNotasUnsub = null, ldSlots = [];
+function nextLeadRef(){
+  const y = new Date().getFullYear().toString().slice(2);
+  const nums = leads.map(l => { const m=/^LD(\d{2})-(\d+)$/.exec(l.ref||""); return m && m[1]===y ? +m[2] : 0; });
+  return `LD${y}-${String(Math.max(0,...nums)+1).padStart(4,"0")}`;
+}
+function renderLeads(){
+  // KPIs
+  const abiertos = leads.filter(LEAD_ABIERTO); const vencidos = leads.filter(leadVencido).length, hoy = leads.filter(leadHoy).length, quietos = leads.filter(leadQuieto).length;
+  const mk = dayStr(new Date()).slice(0,7);
+  const convMes = leads.filter(l => l.estado==="Convertido" && l.convertidoAt && dayStr(new Date(l.convertidoAt)).slice(0,7)===mk).length;
+  const cerrados = leads.filter(l => !LEAD_ABIERTO(l)).length, conv = leads.filter(l => l.estado==="Convertido").length;
+  const tiles = [
+    {k:"Leads abiertos", v:abiertos.length, sub:`${leads.length} en total`},
+    {k:"Seguimientos vencidos", v:vencidos, sub:`${hoy} para hoy`, c:vencidos?"neg":""},
+    {k:`Sin movimiento ${LEAD_DIAS_ALERTA}+ días`, v:quietos, sub:"sin fecha de seguimiento", c:quietos?"neg":""},
+    {k:"Convertidos este mes", v:convMes, sub:`${conv} en total`},
+    {k:"Conversión", v:pct(cerrados ? conv/cerrados*100 : 0), sub:`de los ${cerrados} cerrados (${leads.filter(l=>l.estado==="Perdido").length} perdidos)`},
+  ];
+  $("ldStrip").innerHTML = tiles.map(t=>`<div class="tile"><div class="eyebrow">${esc(t.k)}</div><div class="v num ${t.c||""}">${esc(String(t.v))}</div><div class="sub">${esc(t.sub)}</div></div>`).join("");
+  const alertas = vencidos + quietos; const b = $("leadsBadge"); b.hidden = !alertas; b.textContent = alertas;
+  // lista
+  const q = slug($("ldBuscar").value); const f = $("ldEstadoF").value;
+  const rows = leads.filter(l => (f==="abiertos" ? LEAD_ABIERTO(l) : (!f || l.estado===f)) && (!q || slug([l.cliente,l.tel,l.bateria,l.ref,l.canal].join(" ")).includes(q)));
+  const peso = l => leadVencido(l) ? 0 : leadHoy(l) ? 1 : leadQuieto(l) ? 2 : 3;
+  rows.sort((a,b) => peso(a)-peso(b) || (b.updatedAt||0)-(a.updatedAt||0));
+  $("ldLista").innerHTML = rows.length ? rows.map(l => { const al = leadVencido(l) || leadQuieto(l); return `
+    <button class="row" data-id="${esc(l.id)}" aria-current="${l.id===ldSel}" data-alerta="${al?1:0}">
+      <div class="ref">${esc(l.ref)}</div>
+      <div style="min-width:0"><div class="t">${esc(l.cliente)}</div><div class="m">${esc([l.bateria, l.canal].filter(Boolean).join(" · "))}${l.precio?` · ${eur(l.precio)}`:""}</div></div>
+      <div class="r">${leadChip(l.estado)}${leadVencido(l)?`<span class="chip vence">Vencido ${esc(l.proximo.slice(8,10))}/${esc(l.proximo.slice(5,7))}</span>`:leadHoy(l)?`<span class="chip vence">Hoy</span>`:leadQuieto(l)?`<span class="chip quieto">${leadDiasQuieto(l)} d sin mover</span>`:""}${l.encargoRef?`<span class="wh">${esc(l.encargoRef)}</span>`:""}<span class="num muted">${ago(l.updatedAt||l.createdAt||Date.now())}</span></div>
+    </button>`; }).join("") : `<div class="empty">${leads.length?"Ningún lead con ese filtro.":"Sin leads todavía. Crea el primero desde el botón o cuando llegue un chat."}</div>`;
+  $("ldLista").querySelectorAll(".row").forEach(r => r.addEventListener("click", () => selectLead(r.dataset.id)));
+  if(ldSel && !$("ldBody").hidden){ const l = leads.find(x=>x.id===ldSel); if(l) renderLeadDetalle(l); }
+}
+function selectLead(id){
+  ldSel = id; const l = leads.find(x=>x.id===id);
+  $("ldEmpty").hidden = !!l; $("ldBody").hidden = !l; $("ldFormPanel").hidden = true;
+  if(!l) return;
+  renderLeadDetalle(l);
+  if(ldNotasUnsub){ ldNotasUnsub(); ldNotasUnsub = null; }
+  ldNotas = [];
+  ldNotasUnsub = db.doc("notas/"+id).onSnapshot(s => { ldNotas = ex(s) ? (s.data().items||[]) : []; renderLeadTimeline(); }, err => console.warn(err));
+  renderLeadTimeline();
+  if(window.innerWidth <= 900) setTimeout(() => $("ldDetalle").scrollIntoView({behavior:"smooth", block:"start"}), 50);
+  renderLeads();
+}
+const renderLeadTimeline = () => renderTimelineIn("ldTimeline", ldNotas, delLeadNota, "Sin notas todavía. Apunta lo que ha dicho el cliente para que no se pierda.");
+function renderLeadDetalle(l){
+  $("ldRef").textContent = `${l.ref} · ${l.canal||"—"} · creado ${l.createdAt ? new Date(l.createdAt).toLocaleDateString("es-ES") : "—"}${l.creadoPor?` por ${String(l.creadoPor).split(":").pop()}`:""}`;
+  $("ldTitulo").textContent = l.cliente; $("ldSub").textContent = [l.bateria, l.v?`${l.v} V`:"", l.ah?`${l.ah} Ah`:""].filter(Boolean).join(" · ");
+  if(document.activeElement!==$("ldEstado")) fillSelect($("ldEstado"), LEAD_ESTADOS.includes(l.estado)?LEAD_ESTADOS:[l.estado,...LEAD_ESTADOS], {value:l.estado});
+  if(document.activeElement!==$("ldProximo")) $("ldProximo").value = l.proximo||"";
+  if(document.activeElement!==$("ldSeguimiento")) $("ldSeguimiento").value = l.seguimiento||"";
+  ["ldEstado","ldProximo","ldSeguimiento"].forEach(id => $(id).disabled = readOnly || l.estado==="Convertido");
+  const enc = l.encargoId ? encargos.find(e=>e.id===l.encargoId) : null;
+  $("ldActs").innerHTML = readOnly ? "" : (l.estado==="Convertido"
+    ? `<button class="btn" id="ldIrEncargo">Ver encargo ${esc(l.encargoRef||"")}</button>`
+    : `<button class="btn" id="ldEditar">Editar</button><button class="btn primary" id="ldConvertir">→ Pasar a encargo</button>${l.estado!=="Perdido"?`<button class="btn" id="ldPerder">Perdido</button>`:""}<span id="ldDelWrap"><button class="btn sm danger" id="ldDel">Eliminar</button></span>`);
+  const ie = $("ldIrEncargo"); if(ie) ie.addEventListener("click", () => { if(enc){ selId = enc.id; showView("encargos"); selectEncargo(enc.id); } else toast("El encargo ya no existe"); });
+  const ed = $("ldEditar"); if(ed) ed.addEventListener("click", () => openLeadForm(l));
+  const cv = $("ldConvertir"); if(cv) cv.addEventListener("click", () => renderConvBox(l, true));
+  const pd = $("ldPerder"); if(pd) pd.addEventListener("click", () => renderPerderBox(l));
+  const dl = $("ldDel"); if(dl) dl.addEventListener("click", () => confirmInline($("ldDelWrap"), "¿Eliminar este lead y sus notas?", async () => { try{ await db.doc("leads/"+l.id).delete(); ldSel = null; $("ldBody").hidden = true; $("ldEmpty").hidden = false; toast("Lead eliminado"); renderLeads(); }catch(err){ toast("No se pudo eliminar: "+(err.message||err.code)); } }));
+  if($("ldConvBox").dataset.lead!==l.id) { $("ldConvBox").hidden = true; $("ldConvBox").innerHTML = ""; }
+  $("ldKv").innerHTML = `
+    <dt>Teléfono</dt><dd>${l.tel?`<a href="tel:${esc(l.tel)}">${esc(l.tel)}</a>`:"—"}</dd>
+    <dt>Necesidad</dt><dd style="white-space:pre-wrap">${esc(l.desc||"—")}</dd>
+    <dt>Precio orientativo</dt><dd>${l.precio?eur(l.precio)+" sin IVA":"—"}</dd>
+    ${l.estado==="Perdido"?`<dt>Motivo</dt><dd>${esc(l.motivo||"—")}</dd>`:""}
+    ${l.estado==="Convertido"?`<dt>Encargo</dt><dd>${enc?`<a href="#encargos" id="ldEncLink">${esc(l.encargoRef)}</a> · <span class="chip ${chipClass(enc.estado)}">${esc(enc.estado)}</span>`:esc(l.encargoRef||"—")} · convertido ${l.convertidoAt?new Date(l.convertidoAt).toLocaleDateString("es-ES"):""}</dd>`:""}`;
+  const el = $("ldEncLink"); if(el) el.addEventListener("click", ev => { ev.preventDefault(); selId = enc.id; showView("encargos"); selectEncargo(enc.id); });
+  const fotos = (l.fotos||[]).filter(Boolean);
+  $("ldFotosView").innerHTML = fotos.map(id => `<a class="foto" href="${esc(TL.blobUrl(id))}" target="_blank" rel="noopener"><img src="${esc(TL.blobUrl(id))}" alt="Foto del lead"></a>`).join("");
+  $("ldFotosView").hidden = !fotos.length;
+  $("ldComposer").hidden = readOnly || l.estado==="Convertido";
+}
+async function updateLead(id, patch, nota){
+  const l = leads.find(x=>x.id===id); if(!l) return;
+  await db.doc("leads/"+id).update({...patch, updatedAt:Date.now()});
+  if(nota) await addLeadNota(id, {tipo:"sistema", texto:nota});
+}
+let ldSaveT;
+["ldEstado","ldProximo","ldSeguimiento"].forEach(id => $(id).addEventListener("change", () => {
+  const l = leads.find(x=>x.id===ldSel); if(!l) return;
+  clearTimeout(ldSaveT);
+  ldSaveT = setTimeout(async () => {
+    const patch = {}; const notas = [];
+    const est = $("ldEstado").value; if(est!==l.estado){ if(est==="Perdido"){ renderPerderBox(l); fillSelect($("ldEstado"), LEAD_ESTADOS, {value:l.estado}); return; } if(est==="Convertido"){ renderConvBox(l, true); fillSelect($("ldEstado"), LEAD_ESTADOS, {value:l.estado}); return; } patch.estado = est; notas.push(`Estado del lead: ${est}`); }
+    if($("ldProximo").value!==(l.proximo||"")){ patch.proximo = $("ldProximo").value||""; }
+    if($("ldSeguimiento").value.trim()!==(l.seguimiento||"")){ patch.seguimiento = $("ldSeguimiento").value.trim(); }
+    if(("proximo" in patch) || ("seguimiento" in patch)){ const p = patch.proximo ?? l.proximo, sgt = patch.seguimiento ?? l.seguimiento; notas.push(p ? `Seguimiento: ${new Date(p+"T12:00:00").toLocaleDateString("es-ES")}${sgt?` · ${sgt}`:""}` : (sgt ? `Seguimiento: ${sgt}` : "Seguimiento quitado")); }
+    if(!Object.keys(patch).length) return;
+    try{ await updateLead(l.id, patch, notas.join(" · ")); toast("Lead actualizado"); }catch(err){ toast("No se pudo guardar: "+(err.message||err.code)); }
+  }, 250);
+}));
+function renderPerderBox(l){
+  const box = $("ldConvBox"); box.hidden = false; box.dataset.lead = l.id; box.classList.remove("ok");
+  box.innerHTML = `<div class="conv-form"><div class="eyebrow" style="grid-column:1/-1">Marcar como perdido</div>
+    <label class="f">Motivo<select id="ldMotivo">${LEAD_MOTIVOS.map(m=>`<option>${m}</option>`).join("")}</select></label>
+    <label class="f">Detalle (opcional)<input type="text" id="ldMotivoTxt" placeholder="Ej. le parecía caro, 180 €"></label>
+    <div style="grid-column:1/-1;display:flex;gap:8px;justify-content:flex-end"><button class="btn sm" id="ldPerderNo">Cancelar</button><button class="btn sm danger" id="ldPerderSi">Marcar perdido</button></div></div>`;
+  $("ldPerderNo").addEventListener("click", () => { box.hidden = true; box.innerHTML = ""; delete box.dataset.lead; });
+  $("ldPerderSi").addEventListener("click", async () => { const motivo = [$("ldMotivo").value, $("ldMotivoTxt").value.trim()].filter(Boolean).join(" · "); try{ await updateLead(l.id, {estado:"Perdido", motivo, proximo:"", seguimiento:""}, `Lead perdido · ${motivo}`); box.hidden = true; box.innerHTML = ""; delete box.dataset.lead; toast("Lead marcado como perdido"); }catch(err){ toast("No se pudo guardar: "+(err.message||err.code)); } });
+}
+// Pasar a encargo: pide lo que un lead no tiene (fecha de entrada, estado, almacén, señal) y lo crea el servidor
+function renderConvBox(l, scroll){
+  const box = $("ldConvBox"); box.hidden = false; box.dataset.lead = l.id; box.classList.add("ok");
+  box.innerHTML = `<div class="conv-form"><div class="eyebrow" style="grid-column:1/-1">Pasar a encargo · se le asignará el número siguiente al último encargo y se llevará las fotos y todas las notas</div>
+    <label class="f">Fecha de entrada<input type="date" id="cvFecha" value="${dayStr(new Date())}"></label>
+    <label class="f">Estado<select id="cvEstado"></select></label>
+    <label class="f">Almacén<select id="cvAlmacen"></select></label>
+    <label class="f">Señal de diagnosis<select id="cvSenal"><option value="">Sin señal todavía</option><option value="30">Recibida · 30 €</option><option value="50">Recibida · 50 €</option></select></label>
+    <label class="f" style="grid-column:1/-1">Nota de entrada (opcional)<input type="text" id="cvDesc" placeholder="Estado en que llega la batería, accesorios, etc."></label>
+    <div style="grid-column:1/-1;display:flex;gap:8px;justify-content:flex-end"><button class="btn sm" id="cvNo">Cancelar</button><button class="btn primary" id="cvSi">Crear encargo</button></div></div>`;
+  fillSelect($("cvEstado"), config.estados, {value:config.estados[0]}); fillSelect($("cvAlmacen"), config.almacenes, {value:config.almacenes[0]});
+  $("cvNo").addEventListener("click", () => { box.hidden = true; box.innerHTML = ""; delete box.dataset.lead; });
+  $("cvSi").addEventListener("click", async () => {
+    $("cvSi").disabled = true;
+    try{
+      const senal = +$("cvSenal").value||0;
+      const r = await TL.convertirLead(l.id, {fecha:$("cvFecha").value, estado:$("cvEstado").value, almacen:$("cvAlmacen").value, senal:senal>0, senalImporte:senal||null, desc:$("cvDesc").value.trim()});
+      const enc = r.encargo; if(!enc) throw new Error("El servidor no devolvió el encargo");
+      if(!encargos.some(e=>e.id===enc.id)) encargos.push(enc);
+      box.hidden = true; box.innerHTML = ""; delete box.dataset.lead;
+      toast(r.yaConvertido ? `Este lead ya era el encargo ${enc.ref}` : `Encargo ${enc.ref} creado desde el lead`);
+      if(senal>0 && !r.yaConvertido){ const prev = selId; selId = enc.id; await addNota({tipo:"sistema", texto:`Señal de diagnosis recibida · ${eur(senal)}`}); selId = prev; descargarRecibo(enc).catch(err=>console.warn(err)); }
+      selId = enc.id; showView("encargos"); selectEncargo(enc.id); renderAll();
+    }catch(err){ console.error(err); toast("No se pudo crear el encargo: "+(err.message||err.code)); $("cvSi").disabled = false; }
+  });
+  if(scroll) box.scrollIntoView({behavior:"smooth", block:"nearest"});
+}
+async function addLeadNota(leadId, n){
+  const l = leads.find(x=>x.id===leadId); if(!l) return;
+  const nota = { id: Math.random().toString(36).slice(2,10), ts: Date.now(), autor: me.id||null, autorNombre: me.id?undefined:(me.name||undefined), estado: l.estado, ...n };
+  Object.keys(nota).forEach(k => nota[k]===undefined && delete nota[k]);
+  const ref = db.doc("notas/"+leadId); const snap = await ref.get();
+  const items = ex(snap) ? [...(snap.data().items||[]), nota] : [nota];
+  await ref.set({encargoId:leadId, items});
+  await db.doc("leads/"+leadId).update({updatedAt:Date.now()}).catch(()=>{});
+}
+async function delLeadNota(nid){
+  const ref = db.doc("notas/"+ldSel); const snap = await ref.get(); if(!ex(snap)) return;
+  const items = (snap.data().items||[]); const gone = items.find(n=>n.id===nid);
+  await ref.set({encargoId:ldSel, items: items.filter(n=>n.id!==nid)});
+  if(gone && gone.asset && assets){ try{ await assets.delete(gone.asset); }catch{} }
+}
+$("ldFile").addEventListener("change", () => { const f=$("ldFile").files[0]; $("ldFileName").textContent = f? `${f.name} (${Math.round(f.size/1024)} KB)` : ""; });
+$("ldPublicar").addEventListener("click", async () => {
+  const texto = $("ldTexto").value.trim(); const f = $("ldFile").files[0]; if(!ldSel) return;
+  if(!texto && !f){ toast("Escribe algo o adjunta un archivo"); return; }
+  $("ldPublicar").disabled = true;
+  try{
+    let extra = {tipo:"texto"};
+    if(f){
+      if(!assets){ toast("Tu permiso no permite subir archivos"); $("ldPublicar").disabled=false; return; }
+      const type = uploadType(f); if(!type){ toast("Formato no admitido. Usa m4a/mp4, opus/ogg/webm o una imagen."); $("ldPublicar").disabled=false; return; }
+      if(f.size > 20*1024*1024){ toast("El archivo supera 20 MB"); $("ldPublicar").disabled=false; return; }
+      const r = await assets.upload(f, {type}); extra = {tipo: type.startsWith("image/")?"foto":"audio", asset:r.id, mime:type, fileName:f.name};
+    }
+    await addLeadNota(ldSel, {...extra, texto});
+    $("ldTexto").value=""; $("ldFile").value=""; $("ldFileName").textContent=""; toast("Nota publicada");
+  }catch(err){ console.error(err); toast("No se pudo publicar: "+(err.message||err.code||err)); }
+  $("ldPublicar").disabled = false;
+});
+["ldBuscar","ldEstadoF"].forEach(id => $(id).addEventListener("input", renderLeads));
+// Formulario nuevo / editar lead
+const renderLdSlots = () => renderSlotsIn(ldSlots, "lFotos", "lFotoInput", renderLdSlots);
+function openLeadForm(l){
+  ldEditing = l ? l.id : null; ldSlots = (l?.fotos||[]).map(id=>({id})); renderLdSlots();
+  $("ldFormTitle").textContent = l ? `Editar ${l.ref}` : "Nuevo lead"; $("ldSubmit").textContent = l ? "Guardar cambios" : "Guardar lead";
+  $("lCliente").value = l?.cliente||""; $("lTel").value = l?.tel||""; $("lCanal").value = l?.canal||"WhatsApp"; if($("lCanal").value!==(l?.canal||"WhatsApp")) $("lCanal").value = "Otro";
+  $("lPrecio").value = l?.precio??""; $("lBateria").value = l?.bateria||""; $("lV").value = l?.v??""; $("lAh").value = l?.ah??""; $("lDesc").value = l?.desc||"";
+  $("lProximo").value = l?.proximo||""; $("lSeguimiento").value = l?.seguimiento||"";
+  $("ldFormPanel").hidden = false; $("ldFormPanel").scrollIntoView({behavior:"smooth", block:"start"}); $("lCliente").focus();
+}
+$("ldNuevo").addEventListener("click", () => openLeadForm(null));
+$("ldFormCancel").addEventListener("click", () => { $("ldFormPanel").hidden = true; });
+$("formLead").addEventListener("submit", async ev => {
+  ev.preventDefault();
+  const data = { cliente:$("lCliente").value.trim(), tel:$("lTel").value.trim(), canal:$("lCanal").value, precio:+$("lPrecio").value||null, bateria:$("lBateria").value.trim(), v:+$("lV").value||null, ah:+$("lAh").value||null, desc:$("lDesc").value.trim(), proximo:$("lProximo").value||"", seguimiento:$("lSeguimiento").value.trim(), updatedAt:Date.now() };
+  if(!data.cliente){ toast("Indica el nombre del cliente"); return; }
+  $("ldSubmit").disabled = true;
+  try{
+    const prev = ldEditing ? (leads.find(l=>l.id===ldEditing)?.fotos||[]) : [];
+    data.fotos = await commitFotos(prev, ldSlots);
+    if(ldEditing){
+      await db.doc("leads/"+ldEditing).update(data); toast("Lead actualizado"); $("ldFormPanel").hidden = true; selectLead(ldEditing);
+    } else {
+      data.ref = nextLeadRef(); data.estado = "Nuevo"; data.createdAt = Date.now(); data.creadoPor = me.id||null;
+      const ref = await db.collection("leads").add(data); $("ldFormPanel").hidden = true; toast(`Lead ${data.ref} creado`);
+      if(!leads.some(l=>l.id===ref.id)) leads.push({id:ref.id, ...data});
+      await addLeadNota(ref.id, {tipo:"sistema", texto:`Lead creado · ${data.canal}${data.proximo?` · seguimiento ${new Date(data.proximo+"T12:00:00").toLocaleDateString("es-ES")}`:""}`});
+      if(data.desc) await addLeadNota(ref.id, {tipo:"texto", texto:data.desc});
+      selectLead(ref.id);
+    }
+  }catch(err){ console.error(err); toast("No se pudo guardar: "+(err.message||err.code)); }
+  $("ldSubmit").disabled = false;
+});
+
 // ---------- Tiempos de taller ----------
 const FASES = [["diag","Diagnóstico"],["docu","Documentación"],["desm","Desmontaje"],["mont","Montaje"],["conex","Conexión"],["sold","Soldaduras"],["caja","Meter en caja"]];
 const fmtMin = m => { m = Math.round(+m||0); const h = Math.floor(m/60), r = m%60; return h ? `${h} h ${String(r).padStart(2,"0")} min` : `${r} min`; };
@@ -2062,6 +2360,7 @@ function renderAll(){
   refreshSelects(); renderStrip(); renderLista(); renderListaPres(); renderCalc();
   if(isAdmin && $("view-rentabilidad").classList.contains("active")) renderRentNums();
   if($("view-tiempos").classList.contains("active")) renderTiempos();
+  if($("view-leads").classList.contains("active")) renderLeads();
   if(selId && !$("detalleBody").hidden){ const e=encargos.find(x=>x.id===selId); if(e){ $("dTitulo").textContent=e.cliente; renderSenalDetalle(e); fillSelect($("dEstado"),config.estados,{value:e.estado}); fillSelect($("dAlmacen"),config.almacenes,{value:e.almacen}); } else { $("detalleBody").hidden=true; $("detalleEmpty").hidden=false; selId=null; } }
 }
 
@@ -2074,7 +2373,7 @@ function setRole(admin){
 }
 function setReadOnly(ro){
   readOnly = ro;
-  ["btnNuevo","btnPublicar","btnEditar","qGuardar","qEnviado","qAprobar","qRechazar","hFacturado","tGuardar","addCelda","addBms","btnNuevoPres","btnPresupuestar","rAddGasto","rGuardarGastos","tiGuardar"].forEach(id=>{ $(id).disabled = ro; });
+  ["btnNuevo","btnPublicar","btnEditar","qGuardar","qEnviado","qAprobar","qRechazar","hFacturado","tGuardar","addCelda","addBms","btnNuevoPres","btnPresupuestar","rAddGasto","rGuardarGastos","tiGuardar","ldNuevo","ldPublicar","ldSubmit"].forEach(id=>{ $(id).disabled = ro; });
   $("dEstado").disabled = ro; $("dAlmacen").disabled = ro;
   if(ro){ $("statusLine").hidden=false; $("statusLine").textContent = "Solo lectura: tu acceso a este panel no permite cambios. Pide al propietario que te añada como colaborador."; }
 }
@@ -2097,6 +2396,7 @@ function subscribeAll(){
   db.collection("encargos").onSnapshot(s => { encargos = s.docs.map(d=>({id:d.id, ...d.data()})); renderAll(); if(selId){ if(!encargos.some(e=>e.id===selId)){ selId=null; $("detalleBody").hidden=true; $("detalleEmpty").hidden=false; } else { const e=encargos.find(x=>x.id===selId); const fotos=(e.fotos||[]); $("dFotos").innerHTML = fotos.map(id => `<a class="foto" href="${esc(TL.blobUrl(id))}" target="_blank" rel="noopener"><img src="${esc(TL.blobUrl(id))}" alt="Foto de la batería"></a>`).join(""); $("dFotos").hidden=!fotos.length; } } }, e=>console.warn(e));
   db.collection("presupuestos").onSnapshot(s => { presupuestos = s.docs.map(d=>({id:d.id, ...d.data()})); renderAll(); if(curPresId){ renderHolded(); } }, e=>console.warn(e));
   db.collection("tiempos").onSnapshot(s => { tiempos = s.docs.map(d=>({id:d.id, ...d.data()})); renderAll(); }, e=>console.warn(e));
+  db.collection("leads").onSnapshot(s => { leads = s.docs.map(d=>({id:d.id, ...d.data()})); renderLeads(); }, e=>console.warn(e));
 }
 async function enterApp(sess){
   db = TL.db; assets = TL.assets; user = TL.user; downloads = TL.downloads;
@@ -2114,13 +2414,13 @@ function showLogin(msg){
 }
 $("btnLogout").addEventListener("click", () => TL.auth.signOut());
 $("formLogin").addEventListener("submit", async ev => {
-  ev.preventDefault(); $("lSubmit").disabled = true; $("lMsg").textContent = "";
+  ev.preventDefault(); $("ldSubmit").disabled = true; $("lMsg").textContent = "";
   try{
     const nombre = $("lNombre").value.trim(); try{ localStorage.setItem("tl.nombre", nombre); }catch{}
     await TL.auth.signIn($("lRol").value, $("lPass").value, nombre);
     await TL.auth.start(); await enterApp(TL.auth.session());
   }catch(err){ $("lMsg").textContent = err.code==="not_configured" ? err.message : (err.message||"No se pudo entrar"); }
-  $("lSubmit").disabled = false;
+  $("ldSubmit").disabled = false;
 });
 async function boot(){
   refreshSelects(); renderCalc();

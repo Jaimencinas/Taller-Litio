@@ -3,12 +3,13 @@
 //   POST /.netlify/functions/api  {op:"set"|"update"|"delete"|"add", path, data|patch, files}
 //   POST /.netlify/functions/api  {op:"setup"}         → crea las tablas en Airtable y carga las semillas (solo admin)
 // Rutas de documento (las mismas que usaba la página):
-//   encargos/{id} · notas/{encargoId} · presupuestos/{id} · tiempos/{id} · config/{clave} · config/costes/analitica/{presId}
+//   encargos/{id} · notas/{encargoId} · presupuestos/{id} · tiempos/{id} · leads/{id} · config/{clave} · config/costes/analitica/{presId}
+//   Las notas de un lead se guardan en Notas con Encargo = id del lead; al convertirlo pasan al encargo (op "convertir").
 // Claves de config: general, tarifas, costes (solo admin), gastos (solo admin: gastos fijos para la rentabilidad).
 const { json, sessionFrom, configured, at, listAll, findByField, createRec, updateRec, deleteRec, uploadAttachment, BASE } = require("./_lib");
 const SEED = require("./_seed.json");
 
-const T = { enc: "Encargos", notas: "Notas", pres: "Presupuestos", config: "Config", tiempos: "Tiempos" };
+const T = { enc: "Encargos", notas: "Notas", pres: "Presupuestos", config: "Config", tiempos: "Tiempos", leads: "Leads" };
 // Tiempos de taller: un registro por fase/día de un encargo (minutos)
 const FASES = [["diag", "Diagnóstico (min)"], ["docu", "Documentación (min)"], ["desm", "Desmontaje (min)"], ["mont", "Montaje (min)"], ["conex", "Conexión (min)"], ["sold", "Soldaduras (min)"], ["caja", "Meter en caja (min)"]];
 function tiempoToDoc(r) { const f = r.fields; const d = { id: f["ID"], encargoId: f["Encargo"] || null, ref: f["Ref"] || "", fecha: f["Fecha"] || "", obs: f["Observaciones"] || "", autor: f["Autor"] || null, autorNombre: f["Autor nombre"] || "", createdAt: num(f["Creado"]), updatedAt: num(f["Actualizado"]) }; FASES.forEach(([k, n]) => { d[k] = num(f[n]) || 0; }); d.total = FASES.reduce((a, [k]) => a + d[k], 0); return d; }
@@ -29,6 +30,55 @@ function encToDoc(r, adj) {
 }
 function encFields(d) {
   return { "ID": d.id, "Ref": d.ref || "", "Cliente": d.cliente || "", "Teléfono": d.tel || "", "Fecha entrada": d.fecha || null, "Batería": d.bateria || "", "Tensión (V)": num(d.v), "Capacidad (Ah)": num(d.ah), "Estado": d.estado || "", "Almacén": d.almacen || "", "Síntoma": d.desc || "", "Señal diagnosis": !!d.senal, "Señal importe": d.senal ? num(d.senalImporte) : null, "Creado": num(d.createdAt) || Date.now(), "Actualizado": num(d.updatedAt) || Date.now(), "Creado por": d.creadoPor || "" };
+}
+// ---------- leads (contactos que aún no son encargo) ----------
+function leadToDoc(r, adj) {
+  const f = r.fields; attMap(f["Fotos"], adj);
+  return { id: f["ID"], ref: f["Ref"] || "", cliente: f["Cliente"] || "", tel: f["Teléfono"] || "", canal: f["Canal"] || "", bateria: f["Batería"] || "", v: num(f["Tensión (V)"]), ah: num(f["Capacidad (Ah)"]), desc: f["Necesidad"] || "", estado: f["Estado"] || "Nuevo", motivo: f["Motivo pérdida"] || "", proximo: f["Próximo seguimiento"] || "", seguimiento: f["Seguimiento"] || "", precio: num(f["Precio orientativo"]), fotos: attIds(f["Fotos"]), encargoId: f["Encargo"] || null, encargoRef: f["Encargo ref"] || "", convertidoAt: num(f["Convertido"]), createdAt: num(f["Creado"]), updatedAt: num(f["Actualizado"]), creadoPor: f["Creado por"] || null };
+}
+function leadFields(d) {
+  return { "ID": d.id, "Ref": d.ref || "", "Cliente": d.cliente || "", "Teléfono": d.tel || "", "Canal": d.canal || "", "Batería": d.bateria || "", "Tensión (V)": num(d.v), "Capacidad (Ah)": num(d.ah), "Necesidad": d.desc || "", "Estado": d.estado || "Nuevo", "Motivo pérdida": d.motivo || "", "Próximo seguimiento": d.proximo || null, "Seguimiento": d.seguimiento || "", "Precio orientativo": num(d.precio), "Encargo": d.encargoId || "", "Encargo ref": d.encargoRef || "", "Convertido": num(d.convertidoAt), "Creado": num(d.createdAt), "Actualizado": num(d.updatedAt) };
+}
+async function writeLead(id, doc, files, sess) {
+  const adj = {};
+  const rec = await findByField(T.leads, "ID", id);
+  const fields = leadFields({ ...doc, id });
+  let r = rec ? await updateRec(T.leads, rec.id, fields) : await createRec(T.leads, { ...fields, "Creado por": doc.creadoPor || sess.nombre || "" });
+  const fotos = Array.isArray(doc.fotos) ? doc.fotos : (r.fields["Fotos"] || []).map((a) => a.id);
+  const pend = fotos.filter(isPending);
+  if (pend.length) { await attachPending(r.id, "Fotos", pend, files); r = (await findByField(T.leads, "ID", id)) || r; }
+  const keep = new Set(fotos.filter((x) => !isPending(x)));
+  const current = r.fields["Fotos"] || [];
+  const afterNew = current.filter((a) => keep.has(a.id) || !(rec && (rec.fields["Fotos"] || []).some((o) => o.id === a.id)));
+  if (afterNew.length !== current.length) r = await updateRec(T.leads, r.id, { "Fotos": afterNew.map((a) => ({ id: a.id })) });
+  return { doc: leadToDoc(r, adj), adjuntos: adj };
+}
+// Siguiente referencia de encargo (L26-0001…) a partir de lo que hay en Airtable, para no repetir números
+async function nextEncRef() {
+  const y = String(new Date().getFullYear()).slice(2);
+  const all = await listAll(T.enc);
+  const nums = all.map((r) => { const m = /^L(\d{2})-(\d+)$/.exec(r.fields["Ref"] || ""); return m && m[1] === y ? +m[2] : 0; });
+  return `L${y}-${String(Math.max(0, ...nums) + 1).padStart(4, "0")}`;
+}
+// Convierte un lead en encargo: nuevo encargo con el siguiente número, fotos copiadas y notas trasladadas.
+async function convertirLead(leadId, data, sess) {
+  const adj = {};
+  const rec = await findByField(T.leads, "ID", leadId);
+  if (!rec) { const e = new Error("El lead no existe"); e.status = 404; throw e; }
+  const lead = leadToDoc(rec, {});
+  if (lead.encargoId) { const prev = await findByField(T.enc, "ID", lead.encargoId); if (prev) return { doc: leadToDoc(rec, adj), encargo: encToDoc(prev, adj), adjuntos: adj, yaConvertido: true }; }
+  const ref = await nextEncRef();
+  const encId = newId(); const now = Date.now();
+  const fields = { ...encFields({ id: encId, ref, cliente: lead.cliente, tel: lead.tel, fecha: data.fecha || new Date().toISOString().slice(0, 10), bateria: lead.bateria, v: lead.v, ah: lead.ah, estado: data.estado || "Recibido", almacen: data.almacen || "", desc: [lead.desc, data.desc].filter(Boolean).join("\n"), senal: !!data.senal, senalImporte: data.senal ? num(data.senalImporte) : null, createdAt: now, updatedAt: now }), "Creado por": sess.nombre || "" };
+  const fotos = (rec.fields["Fotos"] || []).map((a) => ({ url: a.url, filename: a.filename }));
+  if (fotos.length) fields["Fotos"] = fotos; // Airtable copia los archivos a partir de la URL
+  const enc = await createRec(T.enc, fields);
+  // notas del lead → encargo (misma fecha, autor y adjuntos)
+  const notas = await listAll(T.notas, { filterByFormula: `{Encargo}='${leadId}'` });
+  for (const n of notas) await updateRec(T.notas, n.id, { "Encargo": encId });
+  await createRec(T.notas, notaFields(encId, { id: newId(), ts: now, tipo: "sistema", texto: `Encargo creado desde el lead ${lead.ref || ""} · ${fields["Estado"]}${fields["Almacén"] ? " · " + fields["Almacén"] : ""}`, autor: sess.rol && sess.nombre ? `${sess.rol}:${sess.nombre}` : "", autorNombre: sess.nombre || "", estado: fields["Estado"], almacen: fields["Almacén"] }));
+  const l2 = await updateRec(T.leads, rec.id, { "Estado": "Convertido", "Encargo": encId, "Encargo ref": ref, "Convertido": now, "Actualizado": now });
+  return { doc: leadToDoc(l2, adj), encargo: encToDoc(enc, adj), adjuntos: adj };
 }
 function notaToItem(r, adj) {
   const f = r.fields; attMap(f["Adjunto"], adj); const a = (f["Adjunto"] || [])[0];
@@ -54,14 +104,15 @@ const analFields = (d) => ({ "Coste": num(d.coste), "Beneficio": num(d.beneficio
 // ---------- lectura del estado ----------
 async function readState(admin) {
   const adj = {};
-  const [enc, notas, pres, cfg, tiem] = await Promise.all([listAll(T.enc), listAll(T.notas), listAll(T.pres), listAll(T.config), listAll(T.tiempos).catch((e) => { if (e.status === 404) return []; throw e; })]);
+  const opt = (t) => listAll(t).catch((e) => { if (e.status === 404) return []; throw e; });
+  const [enc, notas, pres, cfg, tiem, leads] = await Promise.all([listAll(T.enc), listAll(T.notas), listAll(T.pres), listAll(T.config), opt(T.tiempos), opt(T.leads)]);
   const notasMap = {};
   notas.forEach((r) => { const e = r.fields["Encargo"]; if (!e) return; (notasMap[e] = notasMap[e] || { encargoId: e, items: [] }).items.push(notaToItem(r, adj)); });
   const config = {};
   cfg.forEach((r) => { const k = r.fields["Clave"]; if (!k) return; if (ADMIN_CONFIG.has(k) && !admin) return; config[k] = parseJSON(r.fields["JSON"], {}); });
   const analitica = {};
   if (admin) pres.forEach((r) => { if (r.fields["Coste"] != null) analitica[r.fields["ID"]] = analToDoc(r); });
-  return { encargos: enc.map((r) => encToDoc(r, adj)).filter((d) => d.id), notas: notasMap, presupuestos: pres.map((r) => presToDoc(r, admin)).filter((d) => d.id), config, analitica, tiempos: tiem.map(tiempoToDoc).filter((d) => d.id), adjuntos: adj, ts: Date.now() };
+  return { encargos: enc.map((r) => encToDoc(r, adj)).filter((d) => d.id), notas: notasMap, presupuestos: pres.map((r) => presToDoc(r, admin)).filter((d) => d.id), config, analitica, tiempos: tiem.map(tiempoToDoc).filter((d) => d.id), leads: leads.map((r) => leadToDoc(r, adj)).filter((d) => d.id), adjuntos: adj, ts: Date.now() };
 }
 
 // ---------- rutas ----------
@@ -72,6 +123,8 @@ function route(path) {
   if (s.length === 2 && s[0] === "notas") return { kind: "notas", id: s[1] };
   if (s.length === 2 && s[0] === "presupuestos") return { kind: "pres", id: s[1] };
   if (s.length === 2 && s[0] === "tiempos") return { kind: "tiempo", id: s[1] };
+  if (s.length === 2 && s[0] === "leads") return { kind: "lead", id: s[1] };
+  if (s.length === 1 && s[0] === "leads") return { kind: "lead", id: null };
   if (s.length === 1 && s[0] === "tiempos") return { kind: "tiempo", id: null };
   if (s.length === 2 && s[0] === "config") return { kind: "config", id: s[1] };
   if (s.length === 1 && s[0] === "encargos") return { kind: "encargo", id: null };
@@ -200,6 +253,7 @@ async function readDoc(rt, admin) {
   if (rt.kind === "notas") { const rs = await listAll(T.notas, { filterByFormula: `{Encargo}='${rt.id}'` }); return { doc: rs.length ? { encargoId: rt.id, items: rs.map((r) => notaToItem(r, adj)) } : null, adjuntos: adj }; }
   if (rt.kind === "pres") { const r = await findByField(T.pres, "ID", rt.id); return { doc: r ? presToDoc(r, admin) : null }; }
   if (rt.kind === "tiempo") { const r = await findByField(T.tiempos, "ID", rt.id); return { doc: r ? tiempoToDoc(r) : null }; }
+  if (rt.kind === "lead") { const r = await findByField(T.leads, "ID", rt.id); return { doc: r ? leadToDoc(r, adj) : null, adjuntos: adj }; }
   if (rt.kind === "config") { if (ADMIN_CONFIG.has(rt.id) && !admin) return { doc: null }; const r = await findByField(T.config, "Clave", rt.id); return { doc: r ? parseJSON(r.fields["JSON"], {}) : null }; }
   if (rt.kind === "analitica") { if (!admin) return { doc: null }; const r = await findByField(T.pres, "ID", rt.id); return { doc: r && r.fields["Coste"] != null ? analToDoc(r) : null }; }
   return { doc: null };
@@ -213,6 +267,7 @@ const SCHEMA = [
   { name: T.notas, fields: [F("ID", "singleLineText"), F("Encargo", "singleLineText"), F("Fecha", "number", int), F("Tipo", "singleLineText"), F("Texto", "multilineText"), F("Autor", "singleLineText"), F("Autor nombre", "singleLineText"), F("Estado", "singleLineText"), F("Almacén", "singleLineText"), F("Adjunto", "multipleAttachments"), F("Mime", "singleLineText")] },
   { name: T.pres, fields: [F("ID", "singleLineText"), F("Número", "singleLineText"), F("Encargo", "singleLineText"), F("Cliente", "singleLineText"), F("NIF", "singleLineText"), F("Dirección", "singleLineText"), F("Email", "email"), F("Batería", "singleLineText"), F("Estado", "singleLineText"), F("Base", "number", money), F("IVA", "number", money), F("Total", "number", money), F("Nº factura", "singleLineText"), F("Datos", "multilineText"), F("Coste", "number", money), F("Beneficio", "number", money), F("Margen %", "number", { precision: 1 }), F("Interno", "multilineText")] },
   { name: T.config, fields: [F("Clave", "singleLineText"), F("JSON", "multilineText")] },
+  { name: T.leads, fields: [F("ID", "singleLineText"), F("Ref", "singleLineText"), F("Cliente", "singleLineText"), F("Teléfono", "phoneNumber"), F("Canal", "singleLineText"), F("Batería", "singleLineText"), F("Tensión (V)", "number", { precision: 1 }), F("Capacidad (Ah)", "number", { precision: 1 }), F("Necesidad", "multilineText"), F("Estado", "singleLineText"), F("Motivo pérdida", "singleLineText"), F("Próximo seguimiento", "date", { dateFormat: { name: "iso" } }), F("Seguimiento", "singleLineText"), F("Precio orientativo", "currency", { precision: 2, symbol: "€" }), F("Fotos", "multipleAttachments"), F("Encargo", "singleLineText"), F("Encargo ref", "singleLineText"), F("Convertido", "number", int), F("Creado", "number", int), F("Actualizado", "number", int), F("Creado por", "singleLineText")] },
   { name: T.tiempos, fields: [F("ID", "singleLineText"), F("Encargo", "singleLineText"), F("Ref", "singleLineText"), F("Fecha", "date", { dateFormat: { name: "iso" } }), ...FASES.map(([, n]) => F(n, "number", int)), F("Total (min)", "number", int), F("Observaciones", "multilineText"), F("Autor", "singleLineText"), F("Autor nombre", "singleLineText"), F("Creado", "number", int), F("Actualizado", "number", int)] },
 ];
 async function setup() {
@@ -260,9 +315,11 @@ exports.handler = async (event) => {
       else if (rt.kind === "notas") { for (const r of await listAll(T.notas, { filterByFormula: `{Encargo}='${rt.id}'` })) await deleteRec(T.notas, r.id); }
       else if (rt.kind === "pres") { const r = await findByField(T.pres, "ID", rt.id); if (r) await deleteRec(T.pres, r.id); }
       else if (rt.kind === "tiempo") { const r = await findByField(T.tiempos, "ID", rt.id); if (r) await deleteRec(T.tiempos, r.id); }
+      else if (rt.kind === "lead") { const r = await findByField(T.leads, "ID", rt.id); if (r) await deleteRec(T.leads, r.id); for (const n of await listAll(T.notas, { filterByFormula: `{Encargo}='${rt.id}'` })) await deleteRec(T.notas, n.id); }
       else if (rt.kind === "config") { const r = await findByField(T.config, "Clave", rt.id); if (r) await deleteRec(T.config, r.id); }
       return json(200, { ok: true });
     }
+    if (b.op === "convertir") { if (rt.kind !== "lead" || !rt.id) return json(400, { error: "Solo se puede convertir un lead" }); return json(200, { id: rt.id, ...(await convertirLead(rt.id, b.data || {}, sess)) }); }
     let data = b.data || {};
     const id = rt.id || newId();
     if (b.op === "update") {
@@ -274,6 +331,7 @@ exports.handler = async (event) => {
     if (rt.kind === "encargo") res = await writeEncargo(id, data, files, sess);
     else if (rt.kind === "notas") res = await writeNotas(id, data, files);
     else if (rt.kind === "pres") res = await writePres(id, data, admin);
+    else if (rt.kind === "lead") res = await writeLead(id, data, files, sess);
     else if (rt.kind === "tiempo") { const rec = await findByField(T.tiempos, "ID", id); const fields = tiempoFields({ ...data, id, autor: data.autor || (sess && sess.id) || "", autorNombre: data.autorNombre || (sess && sess.name) || "" }); const r = rec ? await updateRec(T.tiempos, rec.id, fields) : await createRec(T.tiempos, fields); res = { doc: tiempoToDoc(r) }; }
     else if (rt.kind === "config") res = await writeConfig(id, data);
     else if (rt.kind === "analitica") res = await writeAnalitica(id, data);
